@@ -1,0 +1,257 @@
+# =============================================================================
+# JobLens — Production .gitignore
+# Python + FastAPI + PostgreSQL + Celery + Redis + Next.js + Docker
+# GitHub Desktop: choose "Python" template, then this file replaces it fully.
+# =============================================================================
+
+# =============================================================================
+# ENVIRONMENT & SECRETS (never commit these)
+# =============================================================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+.secrets/
+
+# =============================================================================
+# PYTHON
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+MANIFEST
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+pythonenv*
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+*.cover
+nosetests.xml
+pytest-report.xml
+test-results/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+.pyre/
+
+# Linting
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+# NOTE: removed *.ipynb so notebooks can be committed if needed
+
+# =============================================================================
+# FASTAPI / UVICORN
+# =============================================================================
+*.pid
+*.sock
+uvicorn.log
+
+# =============================================================================
+# CELERY
+# =============================================================================
+celerybeat-schedule
+celerybeat-schedule.db
+celerybeat.pid
+celery-worker.log
+celery-beat.log
+celeryd.log
+
+# =============================================================================
+# ALEMBIC
+# =============================================================================
+migrations/__pycache__/
+
+# =============================================================================
+# HUGGINGFACE / SENTENCE-TRANSFORMERS / EMBEDDINGS
+# =============================================================================
+# Local model caches — these are large binaries, never commit
+.cache/
+huggingface/
+hf_cache/
+transformers_cache/
+TRANSFORMERS_CACHE/
+model_cache/
+embeddings_cache/
+sentence_transformers_cache/
+
+*.bin
+*.safetensors
+*.onnx
+*.pt
+*.pth
+*.pkl
+*.pickle
+
+# NOTE: removed ~/.cache/* because Git does not track home-directory paths
+
+# =============================================================================
+# DATABASE
+# =============================================================================
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+postgres_data/
+pgdata/
+*.sql.gz
+*.dump
+dumps/
+backups/
+
+# =============================================================================
+# REDIS
+# =============================================================================
+redis_data/
+dump.rdb
+appendonly.aof
+redis.log
+
+# =============================================================================
+# DOCKER
+# =============================================================================
+.docker/
+docker-volumes/
+*.tar
+
+# =============================================================================
+# NODE / NEXT.JS
+# =============================================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+package-lock.json.bak
+
+.next/
+out/
+.vercel/
+.netlify/
+.turbo/
+
+*.tsbuildinfo
+next-env.d.ts
+
+# =============================================================================
+# LOGS
+# =============================================================================
+logs/
+*.log
+log/
+*.log.*
+scraper_logs/
+
+# =============================================================================
+# OS ARTIFACTS
+# =============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+Icon
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+*~
+
+# =============================================================================
+# EDITORS — VS CODE
+# =============================================================================
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.history/
+.vscode-test/
+
+# =============================================================================
+# EDITORS — JETBRAINS
+# =============================================================================
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+.idea_modules/
+
+# =============================================================================
+# BUILD & DIST ARTIFACTS
+# =============================================================================
+dist/
+build/
+target/
+*.whl
+*.tar.gz
+*.zip
+!docs/*.zip
+
+# =============================================================================
+# SCRAPERS / PLAYWRIGHT
+# =============================================================================
+playwright-report/
+test-results/
+.playwright/
+browser_data/
+cookies.json
+session_data/
+
+# =============================================================================
+# MISC
+# =============================================================================
+*.swp
+*.swo
+*.tmp
+*.temp
+.temp/
+.tmp
