@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   # ---------------------------------------------------------------------------
   # PostgreSQL 15 with pgvector extension
@@ -23,6 +21,7 @@ services:
       retries: 5
     restart: unless-stopped
 
+
   # ---------------------------------------------------------------------------
   # Redis 7 — Celery broker + result backend
   # ---------------------------------------------------------------------------
@@ -40,8 +39,9 @@ services:
       retries: 5
     restart: unless-stopped
 
+
   # ---------------------------------------------------------------------------
-  # FastAPI backend
+  # FastAPI backend (AUTO MIGRATIONS ENABLED)
   # ---------------------------------------------------------------------------
   backend:
     build:
@@ -57,15 +57,20 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      # Cache HuggingFace models outside the container so they survive rebuilds
       - hf_cache:/root/.cache/huggingface
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+    # AUTO MIGRATION FIX
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
     restart: unless-stopped
+
 
   # ---------------------------------------------------------------------------
   # Celery worker — runs scraper tasks and scoring
@@ -91,8 +96,9 @@ services:
     command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
     restart: unless-stopped
 
+
   # ---------------------------------------------------------------------------
-  # Celery beat — scheduler (runs scrapers every 6h, scoring every 3h, etc.)
+  # Celery beat — scheduler
   # ---------------------------------------------------------------------------
   beat:
     build:
@@ -109,6 +115,7 @@ services:
       - redis
     command: celery -A app.workers.celery_app beat --loglevel=info
     restart: unless-stopped
+
 
   # ---------------------------------------------------------------------------
   # Next.js frontend
@@ -131,7 +138,8 @@ services:
     command: npm run dev
     restart: unless-stopped
 
+
 volumes:
   postgres_data:
   redis_data:
-  hf_cache:        # Shared HuggingFace model cache across backend + worker + beat
+  hf_cache:

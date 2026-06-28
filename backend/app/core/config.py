@@ -5,15 +5,15 @@ from functools import lru_cache
 class Settings(BaseSettings):
     # App
     env: str = "development"
-    secret_key: str = "dev-secret-change-in-production"
+    secret_key: str = ""
     api_prefix: str = "/api/v1"
     debug: bool = True
 
     # Database
-    database_url: str = "postgresql+asyncpg://joblens:joblens_dev@localhost:5432/joblens"
+    database_url: str = ""
 
     # Redis
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str = ""
 
     # Scraping behavior
     scrape_interval_hours: int = 6

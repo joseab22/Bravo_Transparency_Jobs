@@ -1,18 +1,17 @@
 """
-Seed script.
-Populates salary_benchmarks with baseline market data.
+Seed script — populates salary_benchmarks with baseline market data.
 
 Run with:
   docker compose exec backend python -m app.scripts.seed
 """
 
 import asyncio
+from sqlalchemy import select
 from app.db.session import AsyncSessionLocal
 from app.models.models import SalaryBenchmark
 
 
 SALARY_BENCHMARKS = [
-    # (title_normalized, metro_area, seniority, p25, p50, p75)
     ("data analyst", None, "entry", 55000, 68000, 82000),
     ("data analyst", None, "mid", 70000, 88000, 105000),
     ("data analyst", None, "senior", 95000, 115000, 135000),
@@ -39,11 +38,25 @@ SALARY_BENCHMARKS = [
 
 async def seed():
     async with AsyncSessionLocal() as db:
+        added = 0
+        skipped = 0
+
         for title, metro, seniority, p25, p50, p75 in SALARY_BENCHMARKS:
-            existing = await db.get(SalaryBenchmark, {"title_normalized": title, "metro_area": metro, "seniority": seniority})
+
+            stmt = select(SalaryBenchmark).where(
+                SalaryBenchmark.title_normalized == title,
+                SalaryBenchmark.metro_area == metro,
+                SalaryBenchmark.seniority == seniority,
+            )
+
+            result = await db.execute(stmt)
+            existing = result.scalar_one_or_none()
+
             if existing:
+                skipped += 1
                 continue
-            benchmark = SalaryBenchmark(
+
+            db.add(SalaryBenchmark(
                 title_normalized=title,
                 metro_area=metro,
                 seniority=seniority,
@@ -51,11 +64,11 @@ async def seed():
                 salary_p50=p50,
                 salary_p75=p75,
                 sample_size=100,
-            )
-            db.add(benchmark)
+            ))
+            added += 1
 
         await db.commit()
-        print(f"Seeded {len(SALARY_BENCHMARKS)} salary benchmarks.")
+        print(f"✅ Seed complete — {added} added, {skipped} already existed.")
 
 
 if __name__ == "__main__":

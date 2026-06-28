@@ -356,3 +356,23 @@ def build_job_identity_key(
     if metro_area:
         parts.append(slug(metro_area.split(",")[0]))  # city only
     return "__".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Embeddings — defined here so scrapers can import from a single services module
+# ---------------------------------------------------------------------------
+
+from typing import Optional as _Optional
+_model = None
+
+
+def embed_text(text: str) -> list:
+    """
+    Encode text to a 384-dim vector using sentence-transformers all-MiniLM-L6-v2.
+    Model is loaded once and cached in memory.
+    """
+    global _model
+    if _model is None:
+        from sentence_transformers import SentenceTransformer
+        _model = SentenceTransformer("all-MiniLM-L6-v2")
+    return _model.encode(text, normalize_embeddings=True).tolist()
