@@ -34,7 +34,7 @@ A labor market intelligence platform that surfaces hidden hiring signals across 
 
 See `docs/sources/` for per-source setup guides.
 
-**Activation priority:** Start with Dice (no key) + Simplify (no key) → then add RAPIDAPI_KEY (unlocks Indeed, LinkedIn, Glassdoor, Monster) → then ZipRecruiter publisher key → then Jobright.
+**Activation priority:** Start with Dice (no key) + Simplify (no key) → then add `RAPIDAPI_KEY` (unlocks Indeed, LinkedIn, Glassdoor, Monster) → then ZipRecruiter publisher key → then Jobright.
 
 ---
 
@@ -55,7 +55,7 @@ See `docs/sources/` for per-source setup guides.
 ## Project Structure
 
 ```
-job-tracker/
+Bravo_Transparency_Jobs/
 ├── backend/
 │   ├── app/
 │   │   ├── api/routes/          # FastAPI route handlers
@@ -80,19 +80,20 @@ job-tracker/
 │   │   │   ├── ingestion.py     # Upsert pipeline + event firing + embeddings
 │   │   │   └── scrapers/
 │   │   │       ├── base.py      # BaseScraperAdapter interface
-│   │   │       ├── indeed.py    # ✅ JSearch API
-│   │   │       ├── linkedin.py  # ✅ JSearch / official API / Playwright
-│   │   │       ├── glassdoor.py # ✅ RapidAPI Glassdoor
-│   │   │       ├── ziprecruiter.py # ✅ Publisher API
-│   │   │       ├── dice.py      # ✅ Public API (no key)
-│   │   │       ├── monster.py   # ✅ RapidAPI Monster
-│   │   │       ├── jobright.py  # ✅ Jobright API
-│   │   │       └── simplify.py  # ✅ GitHub JSON feed (no key)
+│   │   │       ├── indeed.py    #  JSearch API
+│   │   │       ├── linkedin.py  #  JSearch / official API / Playwright
+│   │   │       ├── glassdoor.py #  RapidAPI Glassdoor
+│   │   │       ├── ziprecruiter.py #  Publisher API
+│   │   │       ├── dice.py      #  Public API (no key)
+│   │   │       ├── monster.py   # RapidAPI Monster
+│   │   │       ├── jobright.py  #  Jobright API
+│   │   │       └── simplify.py  #  GitHub JSON feed (no key)
 │   │   └── scripts/
 │   │       └── seed.py          # Seed salary benchmarks
 │   ├── migrations/
 │   │   ├── env.py               # Alembic async env
-│   │   └── 0001_initial.py      # Full schema migration
+│   │   └── versions/
+│   │       └── 0001_initial.py  # Full schema migration
 │   ├── tests/
 │   │   └── test_core.py         # Unit tests: normalizer, scoring
 │   ├── alembic.ini
@@ -115,12 +116,12 @@ job-tracker/
 │   ├── change_tracking.md       # How job changes are tracked + SQL queries
 │   └── sources/                 # Per-source integration guides
 │       ├── indeed.md · linkedin.md · glassdoor.md · ziprecruiter.md
-│       ├── dice.md · monster.md · jobright.md · simplify.md
+│       └── dice.md · monster.md · jobright.md · simplify.md
 ├── .github/workflows/
 │   ├── ci.yml                   # Test + build on every push
 │   └── deploy.yml               # Deploy to Railway + Vercel on main
 ├── docker-compose.yml
-└── .gitignore                   # Python · Node · Docker · JetBrains · HuggingFace
+└── .gitignore
 ```
 
 ---
@@ -128,55 +129,59 @@ job-tracker/
 ## Quickstart
 
 ### Prerequisites
-- Docker + Docker Compose
-- Python 3.11+
-- Node.js 18+
+- Docker Desktop (includes Docker Compose)
+- Git
 
 ### Run locally
 
 ```bash
-# Clone
-git clone https://github.com/YOUR_USERNAME/joblens.git && cd joblens
+# Clone the repo
+git clone https://github.com/YOUR_USERNAME/Bravo_Transparency_Jobs.git
+cd Bravo_Transparency_Jobs
 
-# Copy env files
+# Copy env files and fill in your values
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env.local
 
-# Start all services (postgres + redis + api + worker + beat + frontend)
+# Start all services — migrations run automatically on first boot
 docker compose up -d
 
-# Run migrations
-docker compose exec backend alembic upgrade head
-
-# Seed salary benchmarks
+# Seed salary benchmark data (first time only)
 docker compose exec backend python -m app.scripts.seed
 
-# Frontend (if not using Docker for frontend dev)
-cd frontend && npm install && npm run dev
+# Verify the API is up
+curl http://localhost:8000/api/v1/jobs/
+# → {"total":0,"page":1,"page_size":20,"pages":0,"results":[]}
 ```
 
-API: `http://localhost:8000/docs`  
-App: `http://localhost:3000`
+API docs: `http://localhost:8000/docs`
+Frontend: `http://localhost:3000`
 
-### Activate scrapers (minimum config)
+> **Note:** Migrations run automatically when the backend container starts.
+> You do not need to run `alembic upgrade head` manually.
+
+---
+
+### Activate scrapers
 
 ```bash
-# Step 1: No keys needed — Dice and Simplify work immediately
+# Dice and Simplify require no API key — start here
 docker compose exec worker celery -A app.workers.celery_app call joblens.scrape_source --args '["dice"]'
 docker compose exec worker celery -A app.workers.celery_app call joblens.scrape_source --args '["simplify"]'
 
-# Step 2: Add RAPIDAPI_KEY to .env, then restart worker — unlocks Indeed, LinkedIn, Glassdoor, Monster
+# Add RAPIDAPI_KEY to backend/.env to unlock Indeed, LinkedIn, Glassdoor, Monster
+# Then restart the worker to pick up the new key:
 docker compose restart worker beat
 
-# Step 3: Add ZIPRECRUITER_API_KEY for ZipRecruiter (best salary data)
-# Step 4: Add JOBRIGHT_API_KEY after requesting access at jobright.ai
+# Add ZIPRECRUITER_API_KEY for ZipRecruiter (best salary data coverage)
+# Add JOBRIGHT_API_KEY after requesting access at jobright.ai
 ```
+
+Scrapers run automatically every 6 hours via Celery beat once keys are configured.
 
 ---
 
 ## Database Schema
-
-### Core tables
 
 | Table | Purpose |
 |-------|---------|
@@ -184,7 +189,7 @@ docker compose restart worker beat
 | `job_postings` | Canonical job record with all transparency scores |
 | `job_snapshots` | Point-in-time history (applicants, salary, description per source) |
 | `job_events` | Audit log of all state changes (created, reposted, applicant_spike, etc.) |
-| `job_embeddings` | 384-dim sentence-transformer vectors (separate table, ivfflat indexed) |
+| `job_embeddings` | 384-dim sentence-transformer vectors (ivfflat indexed) |
 | `job_skills` | Normalized skills per posting |
 | `repost_events` | Repost occurrence log tied to `job_identity_key` |
 | `job_source_sightings` | Every platform a job has been seen on |
@@ -196,26 +201,18 @@ docker compose restart worker beat
 P(ghost) = 0.30 × repost_score
          + 0.25 × days_active_score
          + 0.15 × applicant_score
-         + 0.10 × salary_score       (no salary listed → higher risk)
+         + 0.10 × salary_score
          + 0.10 × company_rating_score
          + 0.10 × historical_repost_score
 ```
 
-Weights are configurable via env vars.
+All weights are configurable via environment variables.
 
 ---
 
 ## Deployment
 
 See `docs/deployment.md` for Railway + Vercel (recommended) and self-hosted VPS options.
-
----
-
-## GitHub Desktop `.gitignore` setup
-
-1. In GitHub Desktop → **Repository → Repository Settings → Ignored Files**
-2. Or when creating the repo: choose **Python** as the template
-3. Replace the generated `.gitignore` with the one in this repo (it covers Python + Node + Docker + JetBrains + VS Code + HuggingFace model caches)
 
 ---
 
