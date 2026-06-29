@@ -87,7 +87,7 @@ class Company(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    job_postings: Mapped[List["JobPosting"]] = relationship(back_populates="company")
+    job_postings: Mapped[List["JobPosting"]] = relationship(back_populates="company", lazy="selectin")
 
     __table_args__ = (
         UniqueConstraint("name_normalized", name="uq_companies_name_normalized"),
@@ -176,12 +176,12 @@ class JobPosting(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    company: Mapped["Company"] = relationship(back_populates="job_postings")
-    skills: Mapped[List["JobSkill"]] = relationship(back_populates="job_posting", cascade="all, delete-orphan")
-    snapshots: Mapped[List["JobSnapshot"]] = relationship(back_populates="job_posting", cascade="all, delete-orphan")
-    repost_events: Mapped[List["RepostEvent"]] = relationship(back_populates="job_posting", cascade="all, delete-orphan")
-    source_sightings: Mapped[List["JobSourceSighting"]] = relationship(back_populates="job_posting", cascade="all, delete-orphan")
-    events: Mapped[List["JobEvent"]] = relationship(back_populates="job_posting", cascade="all, delete-orphan")
+    company: Mapped["Company"] = relationship(back_populates="job_postings", lazy="selectin")
+    skills: Mapped[List["JobSkill"]] = relationship(back_populates="job_posting", cascade="all, delete-orphan", lazy="selectin")
+    snapshots: Mapped[List["JobSnapshot"]] = relationship(back_populates="job_posting", cascade="all, delete-orphan", lazy="selectin")
+    repost_events: Mapped[List["RepostEvent"]] = relationship(back_populates="job_posting", cascade="all, delete-orphan", lazy="selectin")
+    source_sightings: Mapped[List["JobSourceSighting"]] = relationship(back_populates="job_posting", cascade="all, delete-orphan", lazy="selectin")
+    events: Mapped[List["JobEvent"]] = relationship(back_populates="job_posting", cascade="all, delete-orphan", lazy="selectin")
     embedding: Mapped[Optional["JobEmbedding"]] = relationship(back_populates="job_posting", uselist=False, cascade="all, delete-orphan")
 
     __table_args__ = (

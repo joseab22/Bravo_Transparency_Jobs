@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, desc, asc
+from sqlalchemy.orm import selectinload
 from typing import Optional
 import math
 
@@ -20,6 +21,19 @@ SORT_COLS = {
     "activity_score", "competition_score",
 }
 
+# Eager-load options for list view (avoids async lazy-load MissingGreenlet errors)
+LIST_OPTIONS = [
+    selectinload(JobPosting.company),
+    selectinload(JobPosting.skills),
+    selectinload(JobPosting.source_sightings),
+]
+
+# Eager-load options for detail view (loads everything)
+DETAIL_OPTIONS = LIST_OPTIONS + [
+    selectinload(JobPosting.repost_events),
+    selectinload(JobPosting.events),
+]
+
 
 def _build_query(
     q=None, industry=None, remote_type=None, seniority=None,
@@ -28,12 +42,12 @@ def _build_query(
 ):
     query = (
         select(JobPosting)
-        .join(JobPosting.company)
+        .options(*LIST_OPTIONS)
         .where(JobPosting.is_active == True)
     )
     if q:
         ql = f"%{q.lower()}%"
-        query = query.where(or_(
+        query = query.join(JobPosting.company).where(or_(
             JobPosting.title_normalized.ilike(ql),
             Company.name.ilike(ql),
         ))
@@ -87,12 +101,17 @@ async def list_jobs(
         ghost_max=ghost_max, health_min=health_min,
         sort_by=sort_by, sort_dir=sort_dir,
     )
-    total = (await db.execute(select(func.count()).select_from(query.subquery()))).scalar_one()
+    # Count without options (faster)
+    count_q = select(func.count()).select_from(
+        select(JobPosting).where(JobPosting.is_active == True).subquery()
+    )
+    total = (await db.execute(count_q)).scalar_one()
     jobs_result = await db.execute(query.offset((page - 1) * page_size).limit(page_size))
     jobs = jobs_result.scalars().unique().all()
     return PaginatedJobsResponse(
         total=total, page=page, page_size=page_size,
-        pages=math.ceil(total / page_size), results=jobs,
+        pages=math.ceil(total / page_size) if total else 0,
+        results=jobs,
     )
 
 
@@ -102,20 +121,28 @@ async def market_stats(db: AsyncSession = Depends(get_db)):
     total = (await db.execute(select(func.count(JobPosting.id)).where(active))).scalar_one()
     avg_ghost = (await db.execute(select(func.avg(JobPosting.ghost_job_probability)).where(active))).scalar_one() or 0
     avg_health = (await db.execute(select(func.avg(JobPosting.health_score)).where(active))).scalar_one() or 0
-    high_ghost = (await db.execute(select(func.count(JobPosting.id)).where(and_(active, JobPosting.ghost_job_probability >= 0.60)))).scalar_one()
+    high_ghost = (await db.execute(select(func.count(JobPosting.id)).where(
+        and_(active, JobPosting.ghost_job_probability >= 0.60)))).scalar_one()
     avg_days = (await db.execute(select(func.avg(JobPosting.days_active)).where(active))).scalar_one() or 0
     total_apps = (await db.execute(select(func.sum(JobPosting.applicant_count)).where(active))).scalar_one() or 0
     return MarketStats(
-        total_active_jobs=total, avg_ghost_probability=round(float(avg_ghost), 3),
-        avg_health_score=round(float(avg_health), 1), high_ghost_risk_count=high_ghost,
-        top_industries=[], top_skills=[], avg_days_active=round(float(avg_days), 1),
+        total_active_jobs=total,
+        avg_ghost_probability=round(float(avg_ghost), 3),
+        avg_health_score=round(float(avg_health), 1),
+        high_ghost_risk_count=high_ghost,
+        top_industries=[], top_skills=[],
+        avg_days_active=round(float(avg_days), 1),
         total_applicants=int(total_apps),
     )
 
 
 @router.get("/{job_id}", response_model=JobPostingDetail)
 async def get_job(job_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(JobPosting).where(JobPosting.id == job_id))
+    result = await db.execute(
+        select(JobPosting)
+        .options(*DETAIL_OPTIONS)
+        .where(JobPosting.id == job_id)
+    )
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -124,7 +151,9 @@ async def get_job(job_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.post("/{job_id}/score")
 async def trigger_score(job_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(JobPosting).where(JobPosting.id == job_id))
+    result = await db.execute(
+        select(JobPosting).options(*LIST_OPTIONS).where(JobPosting.id == job_id)
+    )
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")

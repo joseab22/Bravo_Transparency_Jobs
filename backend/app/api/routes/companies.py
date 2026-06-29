@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 from typing import Optional
 
 from app.db.session import get_db
@@ -23,7 +24,6 @@ async def list_companies(
         query = query.where(Company.name.ilike(f"%{q}%"))
     if industry:
         query = query.where(Company.industry == industry)
-
     query = query.offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(query)
     return result.scalars().all()
@@ -44,7 +44,11 @@ async def get_company_jobs(
     active_only: bool = True,
     db: AsyncSession = Depends(get_db),
 ):
-    query = select(JobPosting).where(JobPosting.company_id == company_id)
+    query = (
+        select(JobPosting)
+        .options(selectinload(JobPosting.skills), selectinload(JobPosting.source_sightings))
+        .where(JobPosting.company_id == company_id)
+    )
     if active_only:
         query = query.where(JobPosting.is_active == True)
     result = await db.execute(query)
