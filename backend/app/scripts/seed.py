@@ -2,13 +2,14 @@
 Seed script — populates salary_benchmarks with baseline market data.
 
 Run with:
-  docker compose exec backend python -m app.scripts.seed
+    docker compose exec backend python -m app.scripts.seed
 """
 
 import asyncio
-from sqlalchemy import select
+
+from sqlalchemy import text
+
 from app.db.session import AsyncSessionLocal
-from app.models.models import SalaryBenchmark
 
 
 SALARY_BENCHMARKS = [
@@ -43,31 +44,83 @@ async def seed():
 
         for title, metro, seniority, p25, p50, p75 in SALARY_BENCHMARKS:
 
-            stmt = select(SalaryBenchmark).where(
-                SalaryBenchmark.title_normalized == title,
-                SalaryBenchmark.metro_area == metro,
-                SalaryBenchmark.seniority == seniority,
-            )
+            if metro is None:
+                result = await db.execute(
+                    text(
+                        """
+                        SELECT id
+                        FROM salary_benchmarks
+                        WHERE title_normalized = :title
+                          AND metro_area IS NULL
+                          AND seniority = :seniority
+                        """
+                    ),
+                    {
+                        "title": title,
+                        "seniority": seniority,
+                    },
+                )
+            else:
+                result = await db.execute(
+                    text(
+                        """
+                        SELECT id
+                        FROM salary_benchmarks
+                        WHERE title_normalized = :title
+                          AND metro_area = :metro
+                          AND seniority = :seniority
+                        """
+                    ),
+                    {
+                        "title": title,
+                        "metro": metro,
+                        "seniority": seniority,
+                    },
+                )
 
-            result = await db.execute(stmt)
-            existing = result.scalar_one_or_none()
-
-            if existing:
+            if result.fetchone():
                 skipped += 1
                 continue
 
-            db.add(SalaryBenchmark(
-                title_normalized=title,
-                metro_area=metro,
-                seniority=seniority,
-                salary_p25=p25,
-                salary_p50=p50,
-                salary_p75=p75,
-                sample_size=100,
-            ))
+            await db.execute(
+                text(
+                    """
+                    INSERT INTO salary_benchmarks (
+                        title_normalized,
+                        metro_area,
+                        seniority,
+                        salary_p25,
+                        salary_p50,
+                        salary_p75,
+                        sample_size,
+                        updated_at
+                    )
+                    VALUES (
+                        :title,
+                        :metro,
+                        :seniority,
+                        :p25,
+                        :p50,
+                        :p75,
+                        100,
+                        NOW()
+                    )
+                    """
+                ),
+                {
+                    "title": title,
+                    "metro": metro,
+                    "seniority": seniority,
+                    "p25": p25,
+                    "p50": p50,
+                    "p75": p75,
+                },
+            )
+
             added += 1
 
         await db.commit()
+
         print(f"✅ Seed complete — {added} added, {skipped} already existed.")
 
 

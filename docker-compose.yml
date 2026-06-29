@@ -21,7 +21,6 @@ services:
       retries: 5
     restart: unless-stopped
 
-
   # ---------------------------------------------------------------------------
   # Redis 7 — Celery broker + result backend
   # ---------------------------------------------------------------------------
@@ -39,9 +38,8 @@ services:
       retries: 5
     restart: unless-stopped
 
-
   # ---------------------------------------------------------------------------
-  # FastAPI backend (AUTO MIGRATIONS ENABLED)
+  # FastAPI backend (runs Alembic automatically before starting)
   # ---------------------------------------------------------------------------
   backend:
     build:
@@ -63,17 +61,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-
-    # AUTO MIGRATION FIX
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
-
     restart: unless-stopped
 
-
   # ---------------------------------------------------------------------------
-  # Celery worker — runs scraper tasks and scoring
+  # Celery worker — executes background jobs
   # ---------------------------------------------------------------------------
   worker:
     build:
@@ -96,9 +90,8 @@ services:
     command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
     restart: unless-stopped
 
-
   # ---------------------------------------------------------------------------
-  # Celery beat — scheduler
+  # Celery Beat — schedules recurring jobs
   # ---------------------------------------------------------------------------
   beat:
     build:
@@ -109,13 +102,16 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://joblens:joblens_dev@postgres:5432/joblens
       REDIS_URL: redis://redis:6379/0
+      ENV: development
     volumes:
       - ./backend:/app
     depends_on:
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     command: celery -A app.workers.celery_app beat --loglevel=info
     restart: unless-stopped
-
 
   # ---------------------------------------------------------------------------
   # Next.js frontend
@@ -137,7 +133,6 @@ services:
       - backend
     command: npm run dev
     restart: unless-stopped
-
 
 volumes:
   postgres_data:
