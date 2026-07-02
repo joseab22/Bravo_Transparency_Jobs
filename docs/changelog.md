@@ -65,3 +65,15 @@
 - Email/webhook alerts for watched jobs — `watched_jobs` table not yet created
 - Salary benchmark seeding only has US-wide data — metro-specific data needs a data source
 - `activity_score` on `Company` model — currently computed per-posting but not aggregated back to company level
+
+## v0.3.0 — Structured identity and Active Hiring Confidence
+
+- Added tech-focused `decompose_title()` with job family, seniority, specialization, and parse confidence.
+- Added structured identity fingerprints and canonical listing groups.
+- Reworked ingestion to update only stable source records, preserving simultaneous parallel openings.
+- Added original/parallel/repost classification with remote and multi-location handling.
+- Added configurable parallel-listing and repost-gap windows.
+- Added Active Hiring Confidence to scoring, API schemas, filters, sorting, stats, and frontend display.
+- Added Alembic migration `0002_structured_identity.py`.
+- Expanded identity and classifier tests.
+- Corrected the Jobright Celery beat schedule.

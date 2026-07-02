@@ -106,6 +106,13 @@ class JobPosting(Base):
 
     # Identity
     job_identity_key: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
+    identity_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    canonical_job_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("job_postings.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    listing_classification: Mapped[str] = mapped_column(
+        String(30), default="original", nullable=False, index=True
+    )
     external_id: Mapped[Optional[str]] = mapped_column(String(255))
     source: Mapped[str] = mapped_column(SAEnum(JobSource), nullable=False)
     source_url: Mapped[Optional[str]] = mapped_column(String(1000))
@@ -113,6 +120,9 @@ class JobPosting(Base):
     # Titles
     title_raw: Mapped[str] = mapped_column(String(500), nullable=False)
     title_normalized: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
+    job_family: Mapped[Optional[str]] = mapped_column(String(200), index=True)
+    specialization: Mapped[Optional[str]] = mapped_column(String(300))
+    title_parse_confidence: Mapped[Optional[float]] = mapped_column(Float)
 
     # Location (spec: city, state, country, metro, lat, lon)
     location_raw: Mapped[Optional[str]] = mapped_column(String(500))
@@ -166,6 +176,7 @@ class JobPosting(Base):
 
     # Analytics fields required by spec
     activity_score: Mapped[Optional[float]] = mapped_column(Float)              # hiring activity signal
+    active_hiring_confidence: Mapped[Optional[float]] = mapped_column(Float)    # 0-100 confidence role is actively hiring
     description_change_score: Mapped[Optional[float]] = mapped_column(Float)   # how much desc has drifted
     applicant_trend: Mapped[Optional[float]] = mapped_column(Float)            # slope of applicant growth
     salary_trend: Mapped[Optional[float]] = mapped_column(Float)               # salary change direction
@@ -186,6 +197,7 @@ class JobPosting(Base):
 
     __table_args__ = (
         Index("ix_job_postings_identity_active", "job_identity_key", "is_active"),
+        Index("ix_job_postings_fingerprint_active", "identity_fingerprint", "is_active"),
         Index("ix_job_postings_source_external", "source", "external_id"),
     )
 

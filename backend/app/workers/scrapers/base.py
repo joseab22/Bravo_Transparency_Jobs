@@ -14,6 +14,8 @@ The normalized job dict schema is the same for all sources:
     "company_name":     str
     "title_raw":        str
     "title_normalized": str
+    "job_family":       str | None
+    "specialization":   str | None
     "seniority":        str | None
     "location_raw":     str | None
     "city":             str | None
@@ -31,12 +33,15 @@ The normalized job dict schema is the same for all sources:
     "skills":           list[dict]   [{skill, skill_normalized, skill_category}]
     "date_posted":      datetime | None
     "job_identity_key": str
+    "identity_fingerprint": str
 }
 """
 
 from abc import ABC, abstractmethod
 from typing import Optional
 import structlog
+
+from app.services.normalizer import enrich_job_identity
 
 log = structlog.get_logger()
 
@@ -88,7 +93,7 @@ class BaseScraperAdapter(ABC):
                     for raw in raw_jobs:
                         parsed = self.parse_job(raw)
                         if parsed:
-                            all_jobs.append(parsed)
+                            all_jobs.append(enrich_job_identity(parsed))
 
                     await self.rate_limit_sleep()
 

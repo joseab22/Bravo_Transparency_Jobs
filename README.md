@@ -1,7 +1,7 @@
 # JobLens — Job Market Transparency Tracker
 
-A labor market intelligence platform that surfaces hidden hiring signals across 8 job boards:
-**ghost job probability · repost detection · cross-platform tracking · salary fairness scoring**
+A technology-job intelligence platform that surfaces whether employers appear to be actively hiring across 8 job boards:
+**active hiring confidence · ghost-job filtering · repost detection · salary transparency**
 
 ---
 
@@ -9,13 +9,14 @@ A labor market intelligence platform that surfaces hidden hiring signals across 
 
 | Signal | How |
 |--------|-----|
-| Ghost job probability | Weighted model: repost count, days active, applicant volume, salary listing, company rating, similar history |
-| Repost detection | Identity key matching (`company + normalized_title + metro`) + cosine similarity on descriptions |
-| Cross-platform tracking | Tracks every platform a job appears on via `job_source_sightings` |
+| Active hiring confidence | Positive 0–100 score combining freshness, ghost risk, applicant movement, and concurrent active openings |
+| Ghost job probability | Weighted model using repost history, posting age, applicant volume, salary disclosure, and company signals |
+| Structured title identity | Decomposes tech titles into job family, seniority, and specializations before matching |
+| Parallel vs. repost detection | Different external IDs posted together are parallel openings; a repost requires a prior closed listing and a configurable gap |
+| Remote and multi-location handling | Remote regions share one identity; simultaneous regional copies are grouped as parallel, not reposted |
+| Semantic fallback | Title embeddings handle uncertain taxonomy matches; description embeddings validate under-specified roles before they share a chain |
 | Salary fairness | Compares posted salary to `salary_benchmarks` (p50 by title + metro + seniority) |
-| Applicant trend | Slope of applicant count over time from `job_snapshots` |
-| Description change score | SHA-256 diff across snapshot history — title/description rewrites are a ghost signal |
-| Activity score | Composite hiring velocity signal per company |
+| Change tracking | Snapshots measure applicant growth, description drift, salary changes, and active duration |
 
 ---
 
@@ -52,6 +53,36 @@ See `docs/sources/` for per-source setup guides.
 
 ---
 
+
+## Identity and repost logic
+
+JobLens is intentionally optimized first for technology roles. Incoming titles are decomposed into stable dimensions:
+
+```text
+Senior Software Engineer - Admin
+→ family: software engineer
+→ seniority: senior
+→ specialization: admin
+```
+
+```text
+Senior Software Engineer - Lead
+→ family: software engineer
+→ seniority: senior
+→ specialization: tech_lead
+```
+
+The ingestion pipeline then classifies listings as:
+
+- **original** — no related earlier listing
+- **parallel** — the same hiring effort is advertised concurrently, across sources, remote regions, or multiple locations
+- **repost** — a related listing was previously inactive and returned after `REPOST_MIN_GAP_DAYS`
+- **duplicate** — the same source and external ID, updated in place rather than inserted again
+
+See `docs/identity_resolution.md` for the full decision rules.
+
+---
+
 ## Project Structure
 
 ```
@@ -72,9 +103,9 @@ Bravo_Transparency_Jobs/
 │   │   ├── schemas/
 │   │   │   └── jobs.py          # Pydantic request/response schemas
 │   │   ├── services/
-│   │   │   ├── normalizer.py    # Title/location/skill normalization + identity key
-│   │   │   ├── repost_detector.py  # Repost detection + sentence-transformers
-│   │   │   └── scoring.py       # Ghost prob, health, competition, salary fairness
+│   │   │   ├── normalizer.py    # Tech title decomposition + structured identity keys
+│   │   │   ├── repost_detector.py  # Original/parallel/repost classification + NLP fallback
+│   │   │   └── scoring.py       # Active hiring confidence + transparency scores
 │   │   ├── workers/
 │   │   │   ├── celery_app.py    # Celery app + beat schedule (all 8 scrapers)
 │   │   │   ├── ingestion.py     # Upsert pipeline + event firing + embeddings
@@ -93,7 +124,8 @@ Bravo_Transparency_Jobs/
 │   ├── migrations/
 │   │   ├── env.py               # Alembic async env
 │   │   └── versions/
-│   │       └── 0001_initial.py  # Full schema migration
+│   │       ├── 0001_initial.py  # Full schema migration
+│   │       └── 0002_structured_identity.py # Structured identity + hiring confidence
 │   ├── tests/
 │   │   └── test_core.py         # Unit tests: normalizer, scoring
 │   ├── alembic.ini
@@ -186,7 +218,7 @@ Scrapers run automatically every 6 hours via Celery beat once keys are configure
 | Table | Purpose |
 |-------|---------|
 | `companies` | Company master record with rating + hiring metrics |
-| `job_postings` | Canonical job record with all transparency scores |
+| `job_postings` | Job records with structured title identity, canonical grouping, listing classification, and transparency scores |
 | `job_snapshots` | Point-in-time history (applicants, salary, description per source) |
 | `job_events` | Audit log of all state changes (created, reposted, applicant_spike, etc.) |
 | `job_embeddings` | 384-dim sentence-transformer vectors (ivfflat indexed) |
@@ -206,7 +238,7 @@ P(ghost) = 0.30 × repost_score
          + 0.10 × historical_repost_score
 ```
 
-All weights are configurable via environment variables.
+All weights are configurable via environment variables. Parallel active listings slightly reduce ghost risk, while verified reposts increase it. `active_hiring_confidence` presents the same evidence as a positive-facing 0–100 score.
 
 ---
 

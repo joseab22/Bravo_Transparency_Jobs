@@ -32,6 +32,7 @@ from app.core.config import settings
 from app.services.normalizer import (
     normalize_title, extract_seniority, geocode_location,
     extract_skills, build_job_identity_key, normalize_location_text,
+    enrich_job_identity,
 )
 from app.workers.scrapers.base import BaseScraperAdapter
 
@@ -92,7 +93,7 @@ class SimplifyScraper(BaseScraperAdapter):
             for raw in raw_jobs:
                 parsed = self.parse_job(raw)
                 if parsed:
-                    results.append(parsed)
+                    results.append(enrich_job_identity(parsed))
             log.info("simplify_scrape_complete", total=len(results))
             return results
         return await super().scrape(queries)

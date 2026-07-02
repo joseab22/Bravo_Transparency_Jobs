@@ -36,7 +36,7 @@ celery_app.conf.beat_schedule = {
     "scrape-ziprecruiter-every-6h":  {"task": "joblens.scrape_source", "schedule": crontab(minute=30, hour="*/6"),  "args": ["ziprecruiter"]},
     "scrape-dice-every-6h":          {"task": "joblens.scrape_source", "schedule": crontab(minute=40, hour="*/6"),  "args": ["dice"]},
     "scrape-monster-every-6h":       {"task": "joblens.scrape_source", "schedule": crontab(minute=50, hour="*/6"),  "args": ["monster"]},
-    "scrape-jobright-every-6h":      {"task": "joblens.scrape_source", "schedule": crontab(minute=5,  hour="1/6"), "args": ["jobright"]},
+    "scrape-jobright-every-6h":      {"task": "joblens.scrape_source", "schedule": crontab(minute=5,  hour="1,7,13,19"), "args": ["jobright"]},
     "scrape-simplify-daily":         {"task": "joblens.scrape_source", "schedule": crontab(minute=0,  hour=3),      "args": ["simplify"]},  # once/day (GitHub feed)
     # --- Analytics ---
     "repost-detection-daily":   {"task": "joblens.run_repost_detection", "schedule": crontab(minute=30, hour=2)},
@@ -117,22 +117,42 @@ async def _repost_detection() -> dict:
 
 async def _score_all() -> dict:
     async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(JobPosting)
-            .where(and_(JobPosting.is_active == True, JobPosting.health_score == None))
-            .limit(500)
-        )
-        jobs = result.scalars().all()
         scorer = ScoringService()
         scored = 0
-        for job in jobs:
-            try:
-                await scorer.score_job(job, db)
-                scored += 1
-            except Exception as e:
-                log.error("score_error", job_id=job.id, error=str(e))
+        errors = 0
+        last_id = 0
+
+        # Re-score every active job in bounded batches because age, applicant
+        # trends, parallel listings, and repost classification change over time.
+        while True:
+            result = await db.execute(
+                select(JobPosting)
+                .where(
+                    and_(
+                        JobPosting.is_active == True,
+                        JobPosting.id > last_id,
+                    )
+                )
+                .order_by(JobPosting.id)
+                .limit(500)
+            )
+            jobs = list(result.scalars().all())
+            if not jobs:
+                break
+
+            for job in jobs:
+                try:
+                    await scorer.score_job(job, db)
+                    scored += 1
+                except Exception as exc:
+                    errors += 1
+                    log.error("score_error", job_id=job.id, error=str(exc))
+
+            last_id = jobs[-1].id
+            await db.flush()
+
         await db.commit()
-        return {"jobs_scored": scored}
+        return {"jobs_scored": scored, "errors": errors}
 
 
 async def _update_days_active():
