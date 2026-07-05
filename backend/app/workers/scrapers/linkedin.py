@@ -26,8 +26,6 @@ Set LINKEDIN_SCRAPER_MODE in .env to: "jsearch" | "api" | "playwright"
 import asyncio
 from datetime import datetime
 from typing import Optional
-import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
 import structlog
 
 from app.core.config import settings
@@ -53,7 +51,6 @@ class LinkedInScraper(BaseScraperAdapter):
         super().__init__(max_pages or settings.max_pages_per_source)
         self.mode = getattr(settings, "linkedin_scraper_mode", "jsearch")
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def fetch_jobs(self, query: str, page: int = 1) -> dict:
         if self.mode == "jsearch":
             return await self._fetch_jsearch(query, page)
@@ -63,20 +60,20 @@ class LinkedInScraper(BaseScraperAdapter):
         )
 
     async def _fetch_jsearch(self, query: str, page: int) -> dict:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{JSEARCH_BASE}/search",
-                headers=RAPIDAPI_HEADERS,
-                params={
-                    "query": f"{query} site:linkedin.com",
-                    "page": str(page),
-                    "num_pages": "1",
-                    "date_posted": "week",
-                },
-                timeout=30.0,
-            )
-            response.raise_for_status()
-            return response.json()
+        if not settings.rapidapi_key:
+            log.warning("linkedin_no_api_key", hint="Set RAPIDAPI_KEY in .env")
+            return {"data": []}
+
+        return await self.request_json(
+            f"{JSEARCH_BASE}/search",
+            headers=RAPIDAPI_HEADERS,
+            params={
+                "query": f"{query} site:linkedin.com",
+                "page": str(page),
+                "num_pages": "1",
+                "date_posted": "week",
+            },
+        )
 
     def parse_job(self, raw: dict) -> Optional[dict]:
         try:

@@ -18,8 +18,6 @@ work setting (remote/onsite/hybrid) — well-structured for our pipeline.
 import asyncio
 from datetime import datetime
 from typing import Optional
-import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
 import structlog
 
 from app.core.config import settings
@@ -40,29 +38,28 @@ class DiceScraper(BaseScraperAdapter):
     def __init__(self, max_pages: int = None):
         super().__init__(max_pages or settings.max_pages_per_source)
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def fetch_jobs(self, query: str, page: int = 1) -> dict:
-        headers = {"x-api-key": settings.dice_api_key} if getattr(settings, "dice_api_key", "") else {}
+        headers = {
+            "x-api-key": settings.dice_api_key
+        } if getattr(settings, "dice_api_key", "") else {}
 
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                DICE_API_BASE,
-                headers=headers,
-                params={
-                    "q": query,
-                    "countryCode2": "US",
-                    "pageSize": 20,
-                    "page": page,
-                    "facets": "employmentType|postedDate|workplaceTypes",
-                    "fields": "id|jobId|title|companyName|location|postalCode|country|"
-                              "employmentDetails|workplaceTypes|postedDate|applyDataStatus|"
-                              "easyApply|descriptionFragment|taxTerms|salary",
-                    "postedDate": "ONE_WEEK",
-                },
-                timeout=30.0,
-            )
-            response.raise_for_status()
-            return response.json()
+        return await self.request_json(
+            DICE_API_BASE,
+            headers=headers,
+            params={
+                "q": query,
+                "countryCode2": "US",
+                "pageSize": 20,
+                "page": page,
+                "facets": "employmentType|postedDate|workplaceTypes",
+                "fields": (
+                    "id|jobId|title|companyName|location|postalCode|country|"
+                    "employmentDetails|workplaceTypes|postedDate|applyDataStatus|"
+                    "easyApply|descriptionFragment|taxTerms|salary"
+                ),
+                "postedDate": "ONE_WEEK",
+            },
+        )
 
     def extract_job_list(self, raw_response) -> list:
         if isinstance(raw_response, dict):

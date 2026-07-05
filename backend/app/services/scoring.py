@@ -11,7 +11,6 @@ Scores computed:
   market_salary           int (p50 benchmark)
   stability_score         0–100
   activity_score          0–100 (hiring activity signal)
-  active_hiring_confidence 0–100 (positive confidence the employer is hiring)
   description_change_score 0–100 (how much description has drifted)
   applicant_trend         float (slope: positive = growing)
   salary_trend            float (direction: positive = rising)
@@ -34,14 +33,10 @@ class ScoringService:
         interview = self._interview_score(job, ghost_prob)
         salary_fairness, market_salary = await self._salary_fairness(job, db)
         stability = await self._stability_score(job, db)
-        related_active = await self._active_related_count(job, db)
-        activity = self._activity_score(job, related_active)
+        activity = self._activity_score(job)
         desc_change = await self._description_change_score(job, db)
         app_trend = await self._applicant_trend(job, db)
         sal_trend = await self._salary_trend(job, db)
-        active_hiring = self._active_hiring_confidence(
-            job, ghost_prob, activity, app_trend, related_active
-        )
 
         scores = {
             "ghost_job_probability": round(ghost_prob, 3),
@@ -53,7 +48,6 @@ class ScoringService:
             "market_salary": market_salary,
             "stability_score": round(stability, 1),
             "activity_score": round(activity, 1),
-            "active_hiring_confidence": round(active_hiring, 1),
             "description_change_score": round(desc_change, 1),
             "applicant_trend": round(app_trend, 3) if app_trend is not None else None,
             "salary_trend": round(sal_trend, 3) if sal_trend is not None else None,
@@ -128,19 +122,8 @@ class ScoringService:
         if total_w == 0:
             return 0.5, 0.0
         prob = sum(feature_scores[k] * feature_weights[k] for k in feature_scores) / total_w
-
-        # Parallel active listings are evidence of current headcount, while a
-        # verified repost after closure is a negative signal. These are small
-        # adjustments rather than replacements for the weighted model.
-        related_active = await self._active_related_count(job, db)
-        classification = getattr(job, "listing_classification", "original")
-        if classification == "parallel" and related_active > 1:
-            prob -= min(0.10, 0.03 * (related_active - 1))
-        elif classification == "repost":
-            prob += 0.12
-
         confidence = data_points / 6
-        return max(0.01, min(prob, 0.99)), confidence
+        return min(prob, 0.99), confidence
 
     async def _count_historical_reposts(self, job: JobPosting, db: AsyncSession) -> int:
         r = await db.execute(
@@ -183,8 +166,8 @@ class ScoringService:
             base += 5
         return min(base, 100.0)
 
-    def _activity_score(self, job: JobPosting, related_active: int = 1) -> float:
-        """Hiring activity proxy using freshness, listing history, and concurrent openings."""
+    def _activity_score(self, job: JobPosting) -> float:
+        """Hiring activity proxy: fast + low repost + salary listed = high activity."""
         base = 50.0
         if job.days_active <= 7:
             base += 30
@@ -200,54 +183,7 @@ class ScoringService:
             base -= 15
         if job.salary_listed:
             base += 10
-        classification = getattr(job, "listing_classification", "original")
-        if classification == "parallel":
-            base += min(15, 5 * max(1, related_active - 1))
-        elif classification == "repost":
-            base -= 12
         return max(0.0, min(100.0, base))
-
-    def _active_hiring_confidence(
-        self,
-        job: JobPosting,
-        ghost_prob: float,
-        activity_score: float,
-        applicant_trend: Optional[float],
-        related_active: int,
-    ) -> float:
-        """Positive-facing 0–100 score for the likelihood of active hiring."""
-        freshness = (
-            100.0 if job.days_active <= 7 else
-            85.0 if job.days_active <= 14 else
-            70.0 if job.days_active <= 30 else
-            45.0 if job.days_active <= 60 else 20.0
-        )
-        evidence = 55.0
-        if related_active > 1:
-            evidence += min(30.0, (related_active - 1) * 10.0)
-        if applicant_trend is not None:
-            evidence += 10.0 if applicant_trend > 0 else -5.0 if applicant_trend < 0 else 0.0
-        if getattr(job, "listing_classification", "original") == "repost":
-            evidence -= 25.0
-        evidence = max(0.0, min(100.0, evidence))
-
-        score = (1 - ghost_prob) * 55.0 + activity_score * 0.25 + freshness * 0.10 + evidence * 0.10
-        return max(0.0, min(100.0, score))
-
-    async def _active_related_count(self, job: JobPosting, db: AsyncSession) -> int:
-        fingerprint = getattr(job, "identity_fingerprint", None)
-        if not fingerprint:
-            return 1
-        result = await db.execute(
-            select(func.count(JobPosting.id)).where(
-                and_(
-                    JobPosting.company_id == job.company_id,
-                    JobPosting.identity_fingerprint == fingerprint,
-                    JobPosting.is_active == True,
-                )
-            )
-        )
-        return max(1, result.scalar_one() or 1)
 
     async def _salary_fairness(self, job: JobPosting, db: AsyncSession) -> tuple[Optional[float], Optional[int]]:
         if not job.salary_min and not job.salary_max:

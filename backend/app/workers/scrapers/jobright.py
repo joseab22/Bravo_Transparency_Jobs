@@ -21,8 +21,6 @@ Their feed is a good signal-quality cross-check against our own normalizer.
 import asyncio
 from datetime import datetime
 from typing import Optional
-import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
 import structlog
 
 from app.core.config import settings
@@ -43,33 +41,28 @@ class JobrightScraper(BaseScraperAdapter):
         self.api_key = getattr(settings, "jobright_api_key", "")
         self.base_url = getattr(settings, "jobright_api_base_url", "https://api.jobright.ai/v1")
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def fetch_jobs(self, query: str, page: int = 1) -> dict:
         if not self.api_key:
             log.warning(
                 "jobright_no_api_key",
-                hint="Request Jobright API access at https://jobright.ai. Set JOBRIGHT_API_KEY in .env."
+                hint="Request Jobright API access and set JOBRIGHT_API_KEY in .env",
             )
             return {"jobs": [], "total": 0}
 
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{self.base_url}/jobs/search",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-                params={
-                    "q": query,
-                    "page": page,
-                    "limit": 20,
-                    "country": "US",
-                    "postedWithin": "7d",
-                },
-                timeout=30.0,
-            )
-            response.raise_for_status()
-            return response.json()
+        return await self.request_json(
+            f"{self.base_url}/jobs/search",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            params={
+                "q": query,
+                "page": page,
+                "limit": 20,
+                "country": "US",
+                "postedWithin": "7d",
+            },
+        )
 
     def extract_job_list(self, raw_response) -> list:
         if isinstance(raw_response, dict):

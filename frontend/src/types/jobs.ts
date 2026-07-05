@@ -66,11 +66,6 @@ export interface JobListItem {
   id: number;
   title_normalized: string;
   title_raw: string;
-  job_family: string | null;
-  specialization: string | null;
-  title_parse_confidence: number | null;
-  listing_classification: "original" | "parallel" | "repost";
-  canonical_job_id: number | null;
   company: Company;
   location_raw: string | null;
   city: string | null;
@@ -97,7 +92,6 @@ export interface JobListItem {
   salary_fairness_score: number | null;
   // Analytics
   activity_score: number | null;
-  active_hiring_confidence: number | null;
   description_change_score: number | null;
   applicant_trend: number | null;
   salary_trend: number | null;
@@ -131,7 +125,6 @@ export interface MarketStats {
   total_active_jobs: number;
   avg_ghost_probability: number;
   avg_health_score: number;
-  avg_active_hiring_confidence: number;
   high_ghost_risk_count: number;
   top_industries: { industry: string; count: number }[];
   top_skills: { skill: string; count: number }[];
@@ -150,7 +143,6 @@ export interface JobFilters {
   salary_max?: number;
   ghost_max?: number;
   health_min?: number;
-  active_confidence_min?: number;
   sort_by?: string;
   sort_dir?: "asc" | "desc";
   page?: number;

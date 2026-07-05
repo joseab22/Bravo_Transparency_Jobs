@@ -21,8 +21,6 @@ Apply at ziprecruiter.com/publishers for a free API key.
 import asyncio
 from datetime import datetime
 from typing import Optional
-import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
 import structlog
 
 from app.core.config import settings
@@ -44,28 +42,23 @@ class ZipRecruiterScraper(BaseScraperAdapter):
         super().__init__(max_pages or settings.max_pages_per_source)
         self.api_key = getattr(settings, "ziprecruiter_api_key", "")
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def fetch_jobs(self, query: str, page: int = 1) -> dict:
         if not self.api_key:
             log.warning("ziprecruiter_no_api_key", hint="Set ZIPRECRUITER_API_KEY in .env")
             return {"jobs": []}
 
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                ZR_API_BASE,
-                params={
-                    "search": query,
-                    "location": "United States",
-                    "radius_miles": 25,
-                    "days_ago": 7,
-                    "page": page,
-                    "jobs_per_page": 20,
-                    "api_key": self.api_key,
-                },
-                timeout=30.0,
-            )
-            response.raise_for_status()
-            return response.json()
+        return await self.request_json(
+            ZR_API_BASE,
+            params={
+                "search": query,
+                "location": "United States",
+                "radius_miles": 25,
+                "days_ago": 7,
+                "page": page,
+                "jobs_per_page": 20,
+                "api_key": self.api_key,
+            },
+        )
 
     def extract_job_list(self, raw_response) -> list:
         if isinstance(raw_response, dict):

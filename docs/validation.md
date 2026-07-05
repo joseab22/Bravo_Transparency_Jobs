@@ -1,26 +1,39 @@
 # Validation
 
-Validated on the edited source tree:
+## Structured identity implementation
 
-- Python compilation: `python -m compileall -q backend/app backend/tests backend/migrations`
-- Backend tests: `28 passed`
-- SQLAlchemy mapper configuration and FastAPI health endpoint import
-- Celery application import and all 12 beat schedule entries
-- Alembic revision chain and offline PostgreSQL SQL generation through `0002_structured_identity`
-- Frontend TypeScript check: passed
-- Frontend ESLint: passed with no warnings
-- Frontend production build: passed
+The structured-identity source tree was validated with:
 
-Docker itself was not available in the editing environment, so the final archive should still be started locally with:
+- 28 backend tests passing
+- Alembic revision-chain and offline PostgreSQL SQL generation through `0002_structured_identity`
+- SQLAlchemy mapper and FastAPI health-endpoint imports
+- Celery application import and scheduled-task loading
+- frontend TypeScript checking
+- frontend ESLint with no warnings
+- Next.js production build
+
+## Merged scraper-reliability archive
+
+The final merged archive was checked for:
+
+- Python compilation of backend application, tests, and migrations
+- valid JSON in `frontend/.eslintrc.json`
+- presence of both Alembic revisions
+- presence of structured-identity and scraper-reliability documentation
+- ZIP integrity
+
+The full backend suite was not rerun in the packaging environment because its local Python runtime did not include `pgvector`. The Docker backend requirements include `pgvector`, so run the final verification locally with:
 
 ```bash
+docker compose down
 docker compose up -d --build
+docker compose exec backend alembic current
+docker compose exec backend pytest -q
+cd frontend && npm run lint && npm run build
 ```
 
-Then apply/confirm migrations and inspect the services:
+Expected Alembic revision:
 
-```bash
-docker compose logs backend --tail=50
-docker compose logs worker --tail=50
-docker compose logs beat --tail=50
+```text
+0002_structured_identity
 ```

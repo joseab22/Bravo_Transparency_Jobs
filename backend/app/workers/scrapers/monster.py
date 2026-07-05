@@ -19,8 +19,6 @@ especially for mid-career and operations roles.
 import asyncio
 from datetime import datetime
 from typing import Optional
-import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
 import structlog
 
 from app.core.config import settings
@@ -41,30 +39,25 @@ class MonsterScraper(BaseScraperAdapter):
     def __init__(self, max_pages: int = None):
         super().__init__(max_pages or settings.max_pages_per_source)
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def fetch_jobs(self, query: str, page: int = 1) -> dict:
         if not settings.rapidapi_key:
             log.warning("monster_no_api_key", hint="Set RAPIDAPI_KEY in .env")
             return {"jobResults": []}
 
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"https://{MONSTER_RAPIDAPI_HOST}/jobs/search",
-                headers={
-                    "X-RapidAPI-Key": settings.rapidapi_key,
-                    "X-RapidAPI-Host": MONSTER_RAPIDAPI_HOST,
-                },
-                params={
-                    "q": query,
-                    "where": "United States",
-                    "page": page,
-                    "size": 20,
-                    "sort": "date",
-                },
-                timeout=30.0,
-            )
-            response.raise_for_status()
-            return response.json()
+        return await self.request_json(
+            f"https://{MONSTER_RAPIDAPI_HOST}/jobs/search",
+            headers={
+                "X-RapidAPI-Key": settings.rapidapi_key,
+                "X-RapidAPI-Host": MONSTER_RAPIDAPI_HOST,
+            },
+            params={
+                "q": query,
+                "where": "United States",
+                "page": page,
+                "size": 20,
+                "sort": "date",
+            },
+        )
 
     def extract_job_list(self, raw_response) -> list:
         if isinstance(raw_response, dict):

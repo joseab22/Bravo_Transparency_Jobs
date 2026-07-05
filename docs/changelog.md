@@ -1,5 +1,20 @@
 # JobLens Changelog
 
+## v0.4.0 — Structured identity and resilient scraping
+
+### Important changes
+
+- Added tech-focused title decomposition into job family, seniority, and specialization.
+- Added original, parallel, and repost classification with remote and multi-location handling.
+- Added canonical job grouping, identity fingerprints, and Active Hiring Confidence.
+- Added Alembic migration `0002_structured_identity.py`.
+- Centralized HTTP retry and rate-limit handling across all scrapers.
+- Added `Retry-After`, exponential backoff, jitter, transient `5xx`, timeout, and network handling.
+- Added Redis per-source locks to prevent duplicate Celery scrape tasks.
+- Updated worker prefetch/acknowledgment settings and corrected the Jobright schedule.
+- Added identity-resolution, scraper-reliability, validation, and GitHub summary documentation.
+- Added non-interactive Next.js ESLint configuration.
+
 ## v0.2.0 — Full audit & source expansion
 
 ### Files Created
@@ -65,15 +80,3 @@
 - Email/webhook alerts for watched jobs — `watched_jobs` table not yet created
 - Salary benchmark seeding only has US-wide data — metro-specific data needs a data source
 - `activity_score` on `Company` model — currently computed per-posting but not aggregated back to company level
-
-## v0.3.0 — Structured identity and Active Hiring Confidence
-
-- Added tech-focused `decompose_title()` with job family, seniority, specialization, and parse confidence.
-- Added structured identity fingerprints and canonical listing groups.
-- Reworked ingestion to update only stable source records, preserving simultaneous parallel openings.
-- Added original/parallel/repost classification with remote and multi-location handling.
-- Added configurable parallel-listing and repost-gap windows.
-- Added Active Hiring Confidence to scoring, API schemas, filters, sorting, stats, and frontend display.
-- Added Alembic migration `0002_structured_identity.py`.
-- Expanded identity and classifier tests.
-- Corrected the Jobright Celery beat schedule.

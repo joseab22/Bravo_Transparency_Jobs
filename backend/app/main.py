@@ -13,8 +13,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="JobLens API",
-    description="Technology hiring intelligence — active hiring confidence · repost tracking · salary transparency",
-    version="0.3.0",
+    description="Labor market intelligence — ghost job detection · repost tracking · salary transparency",
+    version="0.2.0",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
@@ -34,7 +34,7 @@ app.include_router(companies.router, prefix=settings.api_prefix)
 
 @app.get("/health", tags=["system"])
 async def health():
-    return {"status": "ok", "version": "0.3.0", "sources": [
+    return {"status": "ok", "version": "0.2.0", "sources": [
         "indeed", "linkedin", "glassdoor", "ziprecruiter",
         "dice", "monster", "jobright", "simplify"
     ]}

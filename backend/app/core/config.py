@@ -1,10 +1,8 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
 from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
-
     # App
     env: str = "development"
     secret_key: str = ""
@@ -20,8 +18,6 @@ class Settings(BaseSettings):
     # Scraping behavior
     scrape_interval_hours: int = 6
     max_pages_per_source: int = 10
-    parallel_listing_window_days: int = 2
-    repost_min_gap_days: int = 7
 
     # --- Source API keys ---
     # Shared RapidAPI key (used by Indeed, LinkedIn jsearch mode, Glassdoor, Monster)
@@ -67,7 +63,10 @@ class Settings(BaseSettings):
     # Embeddings
     embedding_model: str = "all-MiniLM-L6-v2"
     similarity_threshold: float = 0.85
-    description_similarity_threshold: float = 0.65
+
+    class Config:
+        env_file = ".env"
+        case_sensitive = False
 
 
 @lru_cache()

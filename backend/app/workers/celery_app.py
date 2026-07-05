@@ -2,8 +2,10 @@
 Celery app — all 8 scraper tasks + analytics tasks.
 """
 import asyncio
+import uuid
 from celery import Celery
 from celery.schedules import crontab
+from redis import Redis
 from sqlalchemy import select, and_, update
 from datetime import datetime, timedelta
 
@@ -18,6 +20,9 @@ from app.workers.ingestion import ingest_jobs
 import structlog
 log = structlog.get_logger()
 
+redis_client = Redis.from_url(settings.redis_url, decode_responses=True)
+SCRAPE_LOCK_SECONDS = 30 * 60
+
 celery_app = Celery("joblens", broker=settings.redis_url, backend=settings.redis_url)
 celery_app.conf.update(
     task_serializer="json",
@@ -25,7 +30,11 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    worker_prefetch_multiplier=1,
+    task_acks_late=True,
+    task_reject_on_worker_lost=True,
     worker_max_tasks_per_child=50,
+    result_expires=3600,
 )
 
 celery_app.conf.beat_schedule = {
@@ -46,6 +55,33 @@ celery_app.conf.beat_schedule = {
 }
 
 
+
+def acquire_scrape_lock(source: str) -> tuple[str, str] | None:
+    """Acquire one Redis lock per source so duplicate scrapes cannot overlap."""
+    lock_key = f"joblens:scrape-lock:{source}"
+    lock_token = str(uuid.uuid4())
+    acquired = redis_client.set(
+        lock_key,
+        lock_token,
+        nx=True,
+        ex=SCRAPE_LOCK_SECONDS,
+    )
+    if not acquired:
+        return None
+    return lock_key, lock_token
+
+
+def release_scrape_lock(lock_key: str, lock_token: str) -> None:
+    """Release the lock only when the current task still owns it."""
+    release_script = """
+    if redis.call('get', KEYS[1]) == ARGV[1] then
+        return redis.call('del', KEYS[1])
+    end
+    return 0
+    """
+    redis_client.eval(release_script, 1, lock_key, lock_token)
+
+
 def run_async(coro):
     loop = asyncio.new_event_loop()
     try:
@@ -56,20 +92,35 @@ def run_async(coro):
 
 @celery_app.task(name="joblens.scrape_source", bind=True, max_retries=3)
 def task_scrape_source(self, source: str):
-    """Universal scraper task — dispatches to the correct adapter by source name."""
+    """Run one source scraper while preventing duplicate overlapping runs."""
     scrape_fn = SCRAPER_REGISTRY.get(source)
     if not scrape_fn:
         log.error("unknown_source", source=source)
         return {"error": f"Unknown source: {source}"}
+
+    lock = acquire_scrape_lock(source)
+    if lock is None:
+        log.warning("scrape_skipped_already_running", source=source)
+        return {
+            "source": source,
+            "status": "skipped",
+            "reason": "A scraper task for this source is already running",
+        }
+
+    lock_key, lock_token = lock
     log.info("task_start", task="scrape_source", source=source)
+
     try:
         jobs = run_async(scrape_fn())
         result = run_async(_ingest(jobs))
         log.info("task_complete", source=source, **result)
-        return result
+        return {"source": source, "status": "completed", **result}
     except Exception as exc:
         log.error("task_error", source=source, error=str(exc))
-        raise self.retry(exc=exc, countdown=300)
+        countdown = min(300 * (self.request.retries + 1), 1800)
+        raise self.retry(exc=exc, countdown=countdown)
+    finally:
+        release_scrape_lock(lock_key, lock_token)
 
 
 @celery_app.task(name="joblens.run_repost_detection", bind=True)
@@ -117,42 +168,22 @@ async def _repost_detection() -> dict:
 
 async def _score_all() -> dict:
     async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(JobPosting)
+            .where(and_(JobPosting.is_active == True, JobPosting.health_score == None))
+            .limit(500)
+        )
+        jobs = result.scalars().all()
         scorer = ScoringService()
         scored = 0
-        errors = 0
-        last_id = 0
-
-        # Re-score every active job in bounded batches because age, applicant
-        # trends, parallel listings, and repost classification change over time.
-        while True:
-            result = await db.execute(
-                select(JobPosting)
-                .where(
-                    and_(
-                        JobPosting.is_active == True,
-                        JobPosting.id > last_id,
-                    )
-                )
-                .order_by(JobPosting.id)
-                .limit(500)
-            )
-            jobs = list(result.scalars().all())
-            if not jobs:
-                break
-
-            for job in jobs:
-                try:
-                    await scorer.score_job(job, db)
-                    scored += 1
-                except Exception as exc:
-                    errors += 1
-                    log.error("score_error", job_id=job.id, error=str(exc))
-
-            last_id = jobs[-1].id
-            await db.flush()
-
+        for job in jobs:
+            try:
+                await scorer.score_job(job, db)
+                scored += 1
+            except Exception as e:
+                log.error("score_error", job_id=job.id, error=str(e))
         await db.commit()
-        return {"jobs_scored": scored, "errors": errors}
+        return {"jobs_scored": scored}
 
 
 async def _update_days_active():

@@ -87,7 +87,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=1
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -123,7 +123,6 @@ services:
     container_name: joblens_frontend
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
-      API_INTERNAL_URL: http://backend:8000
     ports:
       - "3000:3000"
     volumes:

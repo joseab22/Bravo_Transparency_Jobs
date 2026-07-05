@@ -2,22 +2,18 @@
 
 ## Commit title
 
-`feat: add structured tech-job identity and active hiring confidence`
+`feat: add structured job identity and resilient scraper execution`
 
 ## Summary
 
-Adds tech-focused title decomposition, distinguishes parallel openings from true reposts, and introduces an Active Hiring Confidence score.
+Adds tech-focused job identity resolution, Active Hiring Confidence, and safer scraper execution with shared rate-limit handling and duplicate-task prevention.
 
 ## Description
 
-- Decomposes titles into job family, seniority, and specializations.
-- Keeps roles such as `Senior Software Engineer - Admin` and `Senior Software Engineer - Lead` distinct.
-- Rebuilds identity keys centrally during ingestion instead of trusting source-specific keys.
-- Stores different external IDs as separate observations rather than overwriting simultaneous openings.
-- Classifies listings as original, parallel, or repost using stable source IDs, timing, active state, role structure, and location behavior.
-- Treats remote listings across regions and simultaneous multi-location listings as parallel rather than reposted.
-- Requires a previously inactive listing and a configurable gap before creating a repost chain.
-- Uses title embeddings for uncertain taxonomy matches and stored description embeddings to reject unrelated under-specified roles.
-- Adds `active_hiring_confidence` to the database, API, scoring pipeline, and frontend.
-- Adds migration `0002_structured_identity.py`, expanded unit tests, and identity-resolution documentation.
-- Fixes the invalid Jobright Celery schedule and adds a non-interactive Next.js ESLint configuration for CI.
+- Decomposes job titles into family, seniority, and specialization.
+- Distinguishes original listings, parallel openings, and true reposts.
+- Handles remote and simultaneous multi-location postings without inflating repost counts.
+- Adds structured identity fields and Active Hiring Confidence across the database, API, scoring pipeline, and frontend types.
+- Adds shared HTTP `429`, `Retry-After`, exponential-backoff, jitter, network, and temporary `5xx` handling across all scrapers.
+- Prevents overlapping scrapes of the same source with Redis locks and safer Celery task settings.
+- Includes migration `0002_structured_identity.py`, updated documentation, frontend ESLint configuration, and scraper schedule fixes.

@@ -21,8 +21,6 @@ to enrich the Company table with glassdoor_rating.
 import asyncio
 from datetime import datetime
 from typing import Optional
-import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
 import structlog
 
 from app.core.config import settings
@@ -47,29 +45,20 @@ class GlassdoorScraper(BaseScraperAdapter):
     def __init__(self, max_pages: int = None):
         super().__init__(max_pages or settings.max_pages_per_source)
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def fetch_jobs(self, query: str, page: int = 1) -> dict:
-        """
-        Fetch via RapidAPI Glassdoor endpoint.
-        Falls back gracefully with empty list if key not configured.
-        """
         if not settings.rapidapi_key:
             log.warning("glassdoor_no_api_key", hint="Set RAPIDAPI_KEY in .env")
             return {"jobs": []}
 
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"https://{GLASSDOOR_RAPIDAPI_HOST}/jobs/search",
-                headers=RAPIDAPI_HEADERS,
-                params={
-                    "keyword": query,
-                    "page": str(page),
-                    "pageSize": "30",
-                },
-                timeout=30.0,
-            )
-            response.raise_for_status()
-            return response.json()
+        return await self.request_json(
+            f"https://{GLASSDOOR_RAPIDAPI_HOST}/jobs/search",
+            headers=RAPIDAPI_HEADERS,
+            params={
+                "keyword": query,
+                "page": str(page),
+                "pageSize": "30",
+            },
+        )
 
     def extract_job_list(self, raw_response) -> list:
         if isinstance(raw_response, dict):

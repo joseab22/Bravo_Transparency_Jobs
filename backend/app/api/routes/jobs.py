@@ -8,7 +8,7 @@ import math
 from app.db.session import get_db
 from app.models.models import JobPosting, Company
 from app.schemas.jobs import (
-    JobPostingDetail,
+    JobPostingListItem, JobPostingDetail,
     PaginatedJobsResponse, MarketStats,
 )
 from app.services.scoring import ScoringService
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 SORT_COLS = {
     "health_score", "ghost_job_probability", "days_active",
     "salary_max", "applicant_count", "date_first_seen",
-    "activity_score", "active_hiring_confidence", "competition_score",
+    "activity_score", "competition_score",
 }
 
 # Eager-load options for list view (avoids async lazy-load MissingGreenlet errors)
@@ -38,8 +38,7 @@ DETAIL_OPTIONS = LIST_OPTIONS + [
 def _build_query(
     q=None, industry=None, remote_type=None, seniority=None,
     employment_type=None, metro_area=None, salary_min=None, salary_max=None,
-    ghost_max=None, health_min=None, active_confidence_min=None,
-    sort_by="health_score", sort_dir="desc",
+    ghost_max=None, health_min=None, sort_by="health_score", sort_dir="desc",
 ):
     query = (
         select(JobPosting)
@@ -50,8 +49,6 @@ def _build_query(
         ql = f"%{q.lower()}%"
         query = query.join(JobPosting.company).where(or_(
             JobPosting.title_normalized.ilike(ql),
-            JobPosting.job_family.ilike(ql),
-            JobPosting.specialization.ilike(ql),
             Company.name.ilike(ql),
         ))
     if industry:
@@ -72,8 +69,6 @@ def _build_query(
         query = query.where(JobPosting.ghost_job_probability <= ghost_max)
     if health_min is not None:
         query = query.where(JobPosting.health_score >= health_min)
-    if active_confidence_min is not None:
-        query = query.where(JobPosting.active_hiring_confidence >= active_confidence_min)
 
     col_name = sort_by if sort_by in SORT_COLS else "health_score"
     col = getattr(JobPosting, col_name, JobPosting.health_score)
@@ -93,7 +88,6 @@ async def list_jobs(
     salary_max: Optional[int] = None,
     ghost_max: Optional[float] = None,
     health_min: Optional[float] = None,
-    active_confidence_min: Optional[float] = None,
     sort_by: str = "health_score",
     sort_dir: str = "desc",
     page: int = Query(1, ge=1),
@@ -105,11 +99,12 @@ async def list_jobs(
         employment_type=employment_type, metro_area=metro_area,
         salary_min=salary_min, salary_max=salary_max,
         ghost_max=ghost_max, health_min=health_min,
-        active_confidence_min=active_confidence_min,
         sort_by=sort_by, sort_dir=sort_dir,
     )
-    # Count the same filtered query without pagination/order.
-    count_q = select(func.count()).select_from(query.order_by(None).subquery())
+    # Count without options (faster)
+    count_q = select(func.count()).select_from(
+        select(JobPosting).where(JobPosting.is_active == True).subquery()
+    )
     total = (await db.execute(count_q)).scalar_one()
     jobs_result = await db.execute(query.offset((page - 1) * page_size).limit(page_size))
     jobs = jobs_result.scalars().unique().all()
@@ -126,9 +121,6 @@ async def market_stats(db: AsyncSession = Depends(get_db)):
     total = (await db.execute(select(func.count(JobPosting.id)).where(active))).scalar_one()
     avg_ghost = (await db.execute(select(func.avg(JobPosting.ghost_job_probability)).where(active))).scalar_one() or 0
     avg_health = (await db.execute(select(func.avg(JobPosting.health_score)).where(active))).scalar_one() or 0
-    avg_active_confidence = (await db.execute(
-        select(func.avg(JobPosting.active_hiring_confidence)).where(active)
-    )).scalar_one() or 0
     high_ghost = (await db.execute(select(func.count(JobPosting.id)).where(
         and_(active, JobPosting.ghost_job_probability >= 0.60)))).scalar_one()
     avg_days = (await db.execute(select(func.avg(JobPosting.days_active)).where(active))).scalar_one() or 0
@@ -137,7 +129,6 @@ async def market_stats(db: AsyncSession = Depends(get_db)):
         total_active_jobs=total,
         avg_ghost_probability=round(float(avg_ghost), 3),
         avg_health_score=round(float(avg_health), 1),
-        avg_active_hiring_confidence=round(float(avg_active_confidence), 1),
         high_ghost_risk_count=high_ghost,
         top_industries=[], top_skills=[],
         avg_days_active=round(float(avg_days), 1),

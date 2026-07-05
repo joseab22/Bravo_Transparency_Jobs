@@ -72,3 +72,9 @@ Sentence-transformer title similarity is only used when at least one title has l
 - original/parallel/repost classification.
 
 Parallel active openings provide modest positive evidence. Verified reposts reduce confidence and increase ghost-job probability.
+
+## Scraper and ingestion reliability
+
+Identity resolution depends on receiving stable, non-duplicated observations. All HTTP adapters now use the shared `BaseScraperAdapter.request_json()` path for `429`, `Retry-After`, exponential-backoff, jitter, temporary `5xx`, timeout, and network handling.
+
+Celery also acquires a Redis lock per source before scraping. A second task for the same source is skipped while the first is active. This prevents overlapping fetches from creating avoidable upstream traffic or duplicate ingestion attempts. These protections do not change the original/parallel/repost rules; they make the input stream more reliable.

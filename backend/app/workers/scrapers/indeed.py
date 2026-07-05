@@ -12,8 +12,6 @@ Free tier: 100 req/month | Basic: 500/month
 import asyncio
 from datetime import datetime
 from typing import Optional
-import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
 import structlog
 
 from app.core.config import settings
@@ -48,25 +46,21 @@ class IndeedScraper(BaseScraperAdapter):
     def __init__(self, max_pages: int = None):
         super().__init__(max_pages or settings.max_pages_per_source)
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def fetch_jobs(self, query: str, page: int = 1) -> dict:
         if not settings.rapidapi_key:
             log.warning("indeed_no_api_key", hint="Set RAPIDAPI_KEY in .env")
             return {"data": []}
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{JSEARCH_BASE}/search",
-                headers=RAPIDAPI_HEADERS,
-                params={
-                    "query": query,
-                    "page": str(page),
-                    "num_pages": "1",
-                    "date_posted": "week",
-                },
-                timeout=30.0,
-            )
-            response.raise_for_status()
-            return response.json()
+
+        return await self.request_json(
+            f"{JSEARCH_BASE}/search",
+            headers=RAPIDAPI_HEADERS,
+            params={
+                "query": query,
+                "page": str(page),
+                "num_pages": "1",
+                "date_posted": "week",
+            },
+        )
 
     def parse_job(self, raw: dict) -> Optional[dict]:
         try:

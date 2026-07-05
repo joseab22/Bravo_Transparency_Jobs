@@ -57,11 +57,6 @@ class JobPostingListItem(BaseModel):
     id: int
     title_normalized: str
     title_raw: str
-    job_family: Optional[str] = None
-    specialization: Optional[str] = None
-    title_parse_confidence: Optional[float] = None
-    listing_classification: str = "original"
-    canonical_job_id: Optional[int] = None
     company: CompanyOut
     location_raw: Optional[str] = None
     city: Optional[str] = None
@@ -88,13 +83,12 @@ class JobPostingListItem(BaseModel):
     salary_fairness_score: Optional[float] = None
     # Analytics
     activity_score: Optional[float] = None
-    active_hiring_confidence: Optional[float] = None
     description_change_score: Optional[float] = None
     applicant_trend: Optional[float] = None
     salary_trend: Optional[float] = None
     # Relations
-    source_sightings: List[SourceSightingOut] = Field(default_factory=list)
-    skills: List[SkillOut] = Field(default_factory=list)
+    source_sightings: List[SourceSightingOut] = []
+    skills: List[SkillOut] = []
     class Config:
         from_attributes = True
 
@@ -108,8 +102,8 @@ class JobPostingDetail(JobPostingListItem):
     stability_score: Optional[float] = None
     department: Optional[str] = None
     source_url: Optional[str] = None
-    repost_events: List[RepostEventOut] = Field(default_factory=list)
-    events: List[JobEventOut] = Field(default_factory=list)
+    repost_events: List[RepostEventOut] = []
+    events: List[JobEventOut] = []
     class Config:
         from_attributes = True
 
@@ -126,7 +120,6 @@ class MarketStats(BaseModel):
     total_active_jobs: int
     avg_ghost_probability: float
     avg_health_score: float
-    avg_active_hiring_confidence: float
     high_ghost_risk_count: int
     top_industries: List[dict]
     top_skills: List[dict]

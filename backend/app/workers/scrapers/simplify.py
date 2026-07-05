@@ -24,17 +24,17 @@ well-normalized, and update daily. Excellent source for entry-level roles.
 import asyncio
 from datetime import datetime
 from typing import Optional
-import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
 import structlog
 
 from app.core.config import settings
 from app.services.normalizer import (
     normalize_title, extract_seniority, geocode_location,
     extract_skills, build_job_identity_key, normalize_location_text,
-    enrich_job_identity,
 )
-from app.workers.scrapers.base import BaseScraperAdapter
+from app.workers.scrapers.base import (
+    BaseScraperAdapter,
+    ScraperRateLimitError,
+)
 
 log = structlog.get_logger()
 
@@ -59,20 +59,39 @@ class SimplifyScraper(BaseScraperAdapter):
             return await self._fetch_github_feed()
         return await self._fetch_api(query, page)
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def _fetch_github_feed(self) -> list:
-        all_jobs = []
-        async with httpx.AsyncClient() as client:
-            for feed_name, url in SIMPLIFY_FEEDS.items():
-                try:
-                    response = await client.get(url, timeout=30.0)
-                    response.raise_for_status()
-                    data = response.json()
-                    if isinstance(data, list):
-                        all_jobs.extend(data)
-                    log.info("simplify_feed_fetched", feed=feed_name, count=len(data) if isinstance(data, list) else 0)
-                except Exception as e:
-                    log.error("simplify_feed_error", feed=feed_name, error=str(e))
+        all_jobs: list[dict] = []
+
+        for index, (feed_name, url) in enumerate(SIMPLIFY_FEEDS.items()):
+            try:
+                data = await self.request_json(
+                    url,
+                    headers={
+                        "Accept": "application/vnd.github.raw+json,application/json",
+                    },
+                )
+
+                if isinstance(data, list):
+                    all_jobs.extend(data)
+
+                log.info(
+                    "simplify_feed_fetched",
+                    feed=feed_name,
+                    count=len(data) if isinstance(data, list) else 0,
+                )
+
+                if index < len(SIMPLIFY_FEEDS) - 1:
+                    await asyncio.sleep(3.0)
+
+            except ScraperRateLimitError:
+                raise
+            except Exception as exc:
+                log.error(
+                    "simplify_feed_error",
+                    feed=feed_name,
+                    error=str(exc),
+                )
+
         return all_jobs
 
     async def _fetch_api(self, query: str, page: int) -> list:
@@ -93,7 +112,7 @@ class SimplifyScraper(BaseScraperAdapter):
             for raw in raw_jobs:
                 parsed = self.parse_job(raw)
                 if parsed:
-                    results.append(enrich_job_identity(parsed))
+                    results.append(parsed)
             log.info("simplify_scrape_complete", total=len(results))
             return results
         return await super().scrape(queries)
