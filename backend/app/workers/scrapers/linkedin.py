@@ -1,26 +1,7 @@
-"""
-LinkedIn scraper adapter.
+"""LinkedIn listings via the configured JSearch/RapidAPI adapter.
 
-Integration options (choose one based on access level):
-
-OPTION A — RapidAPI JSearch (covers LinkedIn results, easiest):
-  Same RAPIDAPI_KEY used for Indeed. Query with "site:linkedin.com" suffix.
-  Endpoint: https://jsearch.p.rapidapi.com/search
-
-OPTION B — LinkedIn Jobs API (requires LinkedIn partner approval):
-  https://learn.microsoft.com/en-us/linkedin/talent/job-postings/api/
-  Requires OAuth 2.0 via LinkedIn developer app.
-  Env vars: LINKEDIN_CLIENT_ID, LINKEDIN_CLIENT_SECRET
-
-OPTION C — Playwright browser scraping (no API key, higher maintenance):
-  Automates https://www.linkedin.com/jobs/search/
-  Requires Playwright + authenticated session cookie.
-  Env vars: LINKEDIN_SESSION_COOKIE
-
-NOTE: LinkedIn actively blocks automated scraping. Option A (JSearch) is the
-most reliable production path. Option C requires rotating proxies at scale.
-
-Set LINKEDIN_SCRAPER_MODE in .env to: "jsearch" | "api" | "playwright"
+This adapter does not use LinkedIn OAuth credentials and does not geocode during
+parsing. Provider contracts and quotas should be verified before enabling it.
 """
 
 import asyncio
@@ -30,7 +11,7 @@ import structlog
 
 from app.core.config import settings
 from app.services.normalizer import (
-    normalize_title, extract_seniority, geocode_location,
+    normalize_title, extract_seniority,
     extract_skills, build_job_identity_key, normalize_location_text,
 )
 from app.workers.scrapers.base import BaseScraperAdapter
@@ -85,12 +66,12 @@ class LinkedInScraper(BaseScraperAdapter):
             location_raw = f"{raw.get('job_city', '')}, {raw.get('job_state', '')}".strip(", ")
             title_normalized = normalize_title(title_raw)
             seniority = extract_seniority(title_raw)
-            geo = geocode_location(location_raw) if location_raw else None
+            geo = None
 
             sal_min, sal_max = self._normalize_salary(raw)
             description = raw.get("job_description", "")
             skills = extract_skills(description)
-            metro = geo[2] if geo else normalize_location_text(location_raw)
+            metro = normalize_location_text(location_raw)
             identity_key = build_job_identity_key(company_name, title_normalized, metro)
 
             date_str = raw.get("job_posted_at_datetime_utc")

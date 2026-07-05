@@ -1,7 +1,4 @@
 services:
-  # ---------------------------------------------------------------------------
-  # PostgreSQL 15 with pgvector extension
-  # ---------------------------------------------------------------------------
   postgres:
     image: pgvector/pgvector:pg15
     container_name: joblens_postgres
@@ -9,96 +6,88 @@ services:
       POSTGRES_USER: joblens
       POSTGRES_PASSWORD: joblens_dev
       POSTGRES_DB: joblens
-    ports:
-      - "5432:5432"
+    ports: ["5432:5432"]
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./infrastructure/scripts/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+      - ./infrastructure/scripts/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U joblens"]
+      test: ["CMD-SHELL", "pg_isready -U joblens -d joblens"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
     restart: unless-stopped
 
-  # ---------------------------------------------------------------------------
-  # Redis 7 — Celery broker + result backend
-  # ---------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
     container_name: joblens_redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
+    ports: ["6379:6379"]
+    volumes: ["redis_data:/data"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
     restart: unless-stopped
 
-  # ---------------------------------------------------------------------------
-  # FastAPI backend (runs Alembic automatically before starting)
-  # ---------------------------------------------------------------------------
   backend:
     build:
       context: ./backend
       dockerfile: ../infrastructure/docker/Dockerfile.backend
     container_name: joblens_backend
-    env_file: ./backend/.env
+    env_file:
+      - path: ./backend/.env
+        required: false
     environment:
       DATABASE_URL: postgresql+asyncpg://joblens:joblens_dev@postgres:5432/joblens
       REDIS_URL: redis://redis:6379/0
       ENV: development
-    ports:
-      - "8000:8000"
+      HF_HOME: /home/appuser/.cache/huggingface
+    ports: ["8000:8000"]
     volumes:
       - ./backend:/app
-      - hf_cache:/root/.cache/huggingface
+      - hf_cache:/home/appuser/.cache/huggingface
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    command: >
-      sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     restart: unless-stopped
 
-  # ---------------------------------------------------------------------------
-  # Celery worker — executes background jobs
-  # ---------------------------------------------------------------------------
   worker:
     build:
       context: ./backend
       dockerfile: ../infrastructure/docker/Dockerfile.backend
     container_name: joblens_worker
-    env_file: ./backend/.env
+    env_file:
+      - path: ./backend/.env
+        required: false
     environment:
       DATABASE_URL: postgresql+asyncpg://joblens:joblens_dev@postgres:5432/joblens
       REDIS_URL: redis://redis:6379/0
       ENV: development
+      HF_HOME: /home/appuser/.cache/huggingface
     volumes:
       - ./backend:/app
-      - hf_cache:/root/.cache/huggingface
+      - hf_cache:/home/appuser/.cache/huggingface
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
     command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=1
     restart: unless-stopped
 
-  # ---------------------------------------------------------------------------
-  # Celery Beat — schedules recurring jobs
-  # ---------------------------------------------------------------------------
   beat:
     build:
       context: ./backend
       dockerfile: ../infrastructure/docker/Dockerfile.backend
     container_name: joblens_beat
-    env_file: ./backend/.env
+    env_file:
+      - path: ./backend/.env
+        required: false
     environment:
       DATABASE_URL: postgresql+asyncpg://joblens:joblens_dev@postgres:5432/joblens
       REDIS_URL: redis://redis:6379/0
@@ -106,16 +95,11 @@ services:
     volumes:
       - ./backend:/app
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    command: celery -A app.workers.celery_app beat --loglevel=info
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    command: celery -A app.workers.celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule
     restart: unless-stopped
 
-  # ---------------------------------------------------------------------------
-  # Next.js frontend
-  # ---------------------------------------------------------------------------
   frontend:
     build:
       context: ./frontend
@@ -123,15 +107,22 @@ services:
     container_name: joblens_frontend
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
-    ports:
-      - "3000:3000"
+      BACKEND_INTERNAL_URL: http://backend:8000
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports: ["3000:3000"]
     volumes:
       - ./frontend:/app
       - /app/node_modules
       - /app/.next
     depends_on:
-      - backend
+      backend: {condition: service_healthy}
     command: npm run dev
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000 >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     restart: unless-stopped
 
 volumes:

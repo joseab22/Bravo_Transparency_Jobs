@@ -1,19 +1,7 @@
-"""
-Monster scraper adapter.
+"""Monster-labelled listings via the configured RapidAPI adapter.
 
-Integration options:
-
-OPTION A — RapidAPI Monster Jobs endpoint (recommended):
-  https://rapidapi.com/fantastic-jobs/api/monster-job-search
-  Env vars: RAPIDAPI_KEY
-
-OPTION B — Monster Job Search API (partner):
-  https://partner.monster.com/
-  Requires Monster partnership agreement.
-  Env vars: MONSTER_API_KEY
-
-Monster has lower traffic than LinkedIn/Indeed but adds coverage,
-especially for mid-career and operations roles.
+No separate MONSTER_API_KEY is consumed by this implementation. Enable only
+after validating the endpoint contract and quota for your RapidAPI account.
 """
 
 import asyncio
@@ -23,7 +11,7 @@ import structlog
 
 from app.core.config import settings
 from app.services.normalizer import (
-    normalize_title, extract_seniority, geocode_location,
+    normalize_title, extract_seniority,
     extract_skills, build_job_identity_key, normalize_location_text,
 )
 from app.workers.scrapers.base import BaseScraperAdapter
@@ -74,8 +62,8 @@ class MonsterScraper(BaseScraperAdapter):
             location_raw = raw.get("location", raw.get("jobLocation", {}).get("city", ""))
             title_normalized = normalize_title(title_raw)
             seniority = extract_seniority(title_raw)
-            geo = geocode_location(location_raw) if location_raw else None
-            metro = geo[2] if geo else normalize_location_text(location_raw)
+            geo = None
+            metro = normalize_location_text(location_raw)
             description = raw.get("snippet", raw.get("description", ""))
             skills = extract_skills(description)
             identity_key = build_job_identity_key(company_name, title_normalized, metro)

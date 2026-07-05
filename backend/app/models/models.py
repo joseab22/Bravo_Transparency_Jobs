@@ -1,18 +1,19 @@
+from __future__ import annotations
+
+import enum
 from datetime import datetime
-from typing import Optional, List
+from typing import List, Optional
+
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
-    String, Integer, Float, Boolean, Text, DateTime,
-    ForeignKey, UniqueConstraint, Index, Enum as SAEnum, JSON
+    JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from pgvector.sqlalchemy import Vector
-from app.db.session import Base
-import enum
 
+from app.core.time import utc_now
+from app.db.base import Base
 
-# =============================================================================
-# Enums
-# =============================================================================
 
 class RemoteType(str, enum.Enum):
     remote = "Remote"
@@ -60,10 +61,6 @@ class EventType(str, enum.Enum):
     ghost_flagged = "ghost_flagged"
 
 
-# =============================================================================
-# Company
-# =============================================================================
-
 class Company(Base):
     __tablename__ = "companies"
 
@@ -72,31 +69,22 @@ class Company(Base):
     name_normalized: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     industry: Mapped[Optional[str]] = mapped_column(String(100))
     employee_count: Mapped[Optional[int]] = mapped_column(Integer)
-    glassdoor_rating: Mapped[Optional[float]] = mapped_column(Float)  # company_rating per spec
+    glassdoor_rating: Mapped[Optional[float]] = mapped_column(Float)
     glassdoor_url: Mapped[Optional[str]] = mapped_column(String(500))
     website: Mapped[Optional[str]] = mapped_column(String(500))
     linkedin_url: Mapped[Optional[str]] = mapped_column(String(500))
-
-    # Derived metrics updated by scoring worker
     turnover_score: Mapped[Optional[float]] = mapped_column(Float)
     hiring_intensity: Mapped[Optional[float]] = mapped_column(Float)
     ghost_job_rate: Mapped[Optional[float]] = mapped_column(Float)
     avg_reposts: Mapped[Optional[float]] = mapped_column(Float)
     median_time_to_fill: Mapped[Optional[int]] = mapped_column(Integer)
-
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
     job_postings: Mapped[List["JobPosting"]] = relationship(back_populates="company", lazy="selectin")
 
-    __table_args__ = (
-        UniqueConstraint("name_normalized", name="uq_companies_name_normalized"),
-    )
+    __table_args__ = (UniqueConstraint("name_normalized", name="uq_companies_name_normalized"),)
 
-
-# =============================================================================
-# Job Posting — core record
-# =============================================================================
 
 class JobPosting(Base):
     __tablename__ = "job_postings"
@@ -104,17 +92,22 @@ class JobPosting(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False)
 
-    # Identity
     job_identity_key: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
+    identity_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    canonical_job_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("job_postings.id", ondelete="SET NULL"), index=True
+    )
+    listing_classification: Mapped[str] = mapped_column(String(30), default="original", nullable=False, index=True)
     external_id: Mapped[Optional[str]] = mapped_column(String(255))
-    source: Mapped[str] = mapped_column(SAEnum(JobSource), nullable=False)
+    source: Mapped[str] = mapped_column(String(50), nullable=False)
     source_url: Mapped[Optional[str]] = mapped_column(String(1000))
 
-    # Titles
     title_raw: Mapped[str] = mapped_column(String(500), nullable=False)
     title_normalized: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
+    job_family: Mapped[Optional[str]] = mapped_column(String(200), index=True)
+    specialization: Mapped[Optional[str]] = mapped_column(String(300))
+    title_parse_confidence: Mapped[Optional[float]] = mapped_column(Float)
 
-    # Location (spec: city, state, country, metro, lat, lon)
     location_raw: Mapped[Optional[str]] = mapped_column(String(500))
     city: Mapped[Optional[str]] = mapped_column(String(200))
     state: Mapped[Optional[str]] = mapped_column(String(100))
@@ -122,216 +115,172 @@ class JobPosting(Base):
     metro_area: Mapped[Optional[str]] = mapped_column(String(200), index=True)
     latitude: Mapped[Optional[float]] = mapped_column(Float)
     longitude: Mapped[Optional[float]] = mapped_column(Float)
-    remote_type: Mapped[Optional[str]] = mapped_column(SAEnum(RemoteType))
+    remote_type: Mapped[Optional[str]] = mapped_column(String(50))
 
-    # Classification
-    seniority: Mapped[Optional[str]] = mapped_column(SAEnum(SeniorityLevel))
-    employment_type: Mapped[Optional[str]] = mapped_column(SAEnum(EmploymentType))
+    seniority: Mapped[Optional[str]] = mapped_column(String(50))
+    employment_type: Mapped[Optional[str]] = mapped_column(String(50))
     department: Mapped[Optional[str]] = mapped_column(String(200))
     industry: Mapped[Optional[str]] = mapped_column(String(200))
 
-    # Compensation
     salary_min: Mapped[Optional[int]] = mapped_column(Integer)
     salary_max: Mapped[Optional[int]] = mapped_column(Integer)
     salary_currency: Mapped[str] = mapped_column(String(10), default="USD")
     salary_listed: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # Requirements
     education_required: Mapped[Optional[str]] = mapped_column(String(200))
     experience_years_min: Mapped[Optional[int]] = mapped_column(Integer)
     experience_years_max: Mapped[Optional[int]] = mapped_column(Integer)
-
-    # Description stored on posting; embedding in separate table
     description_raw: Mapped[Optional[str]] = mapped_column(Text)
 
-    # Activity timestamps
     date_posted: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True)
-    date_first_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
-    date_last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    date_first_seen: Mapped[datetime] = mapped_column(DateTime, default=utc_now, index=True)
+    date_last_seen: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     days_active: Mapped[int] = mapped_column(Integer, default=0)
-
-    # Applicant tracking
     applicant_count: Mapped[Optional[int]] = mapped_column(Integer)
 
-    # --- Transparency / analytics scores (spec §Analytics Requirements) ---
     ghost_job_probability: Mapped[Optional[float]] = mapped_column(Float)
-    ghost_confidence: Mapped[Optional[float]] = mapped_column(Float)          # confidence_score
+    ghost_confidence: Mapped[Optional[float]] = mapped_column(Float)
     health_score: Mapped[Optional[float]] = mapped_column(Float)
     competition_score: Mapped[Optional[float]] = mapped_column(Float)
     interview_opportunity_score: Mapped[Optional[float]] = mapped_column(Float)
     salary_fairness_score: Mapped[Optional[float]] = mapped_column(Float)
     market_salary: Mapped[Optional[int]] = mapped_column(Integer)
     stability_score: Mapped[Optional[float]] = mapped_column(Float)
-
-    # Analytics fields required by spec
-    activity_score: Mapped[Optional[float]] = mapped_column(Float)              # hiring activity signal
-    description_change_score: Mapped[Optional[float]] = mapped_column(Float)   # how much desc has drifted
-    applicant_trend: Mapped[Optional[float]] = mapped_column(Float)            # slope of applicant growth
-    salary_trend: Mapped[Optional[float]] = mapped_column(Float)               # salary change direction
-
-    # Repost tracking
+    activity_score: Mapped[Optional[float]] = mapped_column(Float)
+    active_hiring_confidence: Mapped[Optional[float]] = mapped_column(Float)
+    description_change_score: Mapped[Optional[float]] = mapped_column(Float)
+    applicant_trend: Mapped[Optional[float]] = mapped_column(Float)
+    salary_trend: Mapped[Optional[float]] = mapped_column(Float)
     repost_count: Mapped[int] = mapped_column(Integer, default=0)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
     company: Mapped["Company"] = relationship(back_populates="job_postings", lazy="selectin")
+    canonical_job: Mapped[Optional["JobPosting"]] = relationship(
+        remote_side="JobPosting.id", foreign_keys=[canonical_job_id], post_update=True, lazy="selectin"
+    )
     skills: Mapped[List["JobSkill"]] = relationship(back_populates="job_posting", cascade="all, delete-orphan", lazy="selectin")
     snapshots: Mapped[List["JobSnapshot"]] = relationship(back_populates="job_posting", cascade="all, delete-orphan", lazy="selectin")
     repost_events: Mapped[List["RepostEvent"]] = relationship(back_populates="job_posting", cascade="all, delete-orphan", lazy="selectin")
     source_sightings: Mapped[List["JobSourceSighting"]] = relationship(back_populates="job_posting", cascade="all, delete-orphan", lazy="selectin")
     events: Mapped[List["JobEvent"]] = relationship(back_populates="job_posting", cascade="all, delete-orphan", lazy="selectin")
-    embedding: Mapped[Optional["JobEmbedding"]] = relationship(back_populates="job_posting", uselist=False, cascade="all, delete-orphan")
+    embedding: Mapped[Optional["JobEmbedding"]] = relationship(back_populates="job_posting", uselist=False, cascade="all, delete-orphan", lazy="selectin")
 
     __table_args__ = (
         Index("ix_job_postings_identity_active", "job_identity_key", "is_active"),
+        Index("ix_job_postings_fingerprint_active", "identity_fingerprint", "is_active"),
         Index("ix_job_postings_source_external", "source", "external_id"),
     )
 
 
-# =============================================================================
-# Job Snapshot — point-in-time record of mutable fields (spec §Snapshots)
-# =============================================================================
-
 class JobSnapshot(Base):
     __tablename__ = "job_snapshots"
-
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     job_posting_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), nullable=False, index=True)
-
-    # spec fields: snapshot_id, job_id, source, applicants, description, salary, date_seen
-    snapshot_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)  # date_seen
-    source: Mapped[Optional[str]] = mapped_column(SAEnum(JobSource))            # which platform this snapshot came from
-    applicant_count: Mapped[Optional[int]] = mapped_column(Integer)             # applicants
-    description_raw: Mapped[Optional[str]] = mapped_column(Text)               # description at this point in time
-    description_hash: Mapped[Optional[str]] = mapped_column(String(64))        # sha256 for change detection
-    salary_min: Mapped[Optional[int]] = mapped_column(Integer)                 # salary (min)
-    salary_max: Mapped[Optional[int]] = mapped_column(Integer)                 # salary (max)
+    snapshot_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, index=True)
+    source: Mapped[Optional[str]] = mapped_column(String(50))
+    applicant_count: Mapped[Optional[int]] = mapped_column(Integer)
+    description_raw: Mapped[Optional[str]] = mapped_column(Text)
+    description_hash: Mapped[Optional[str]] = mapped_column(String(64))
+    salary_min: Mapped[Optional[int]] = mapped_column(Integer)
+    salary_max: Mapped[Optional[int]] = mapped_column(Integer)
     title_raw: Mapped[Optional[str]] = mapped_column(String(500))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-
     job_posting: Mapped["JobPosting"] = relationship(back_populates="snapshots")
 
 
-# =============================================================================
-# Job Event — audit log of all state changes (spec §Events)
-# =============================================================================
-
 class JobEvent(Base):
     __tablename__ = "job_events"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)    # event_id
-    job_posting_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), nullable=False, index=True)  # job_id
-    event_type: Mapped[str] = mapped_column(SAEnum(EventType), nullable=False)  # event_type
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)  # timestamp
-    source: Mapped[Optional[str]] = mapped_column(SAEnum(JobSource))
-    payload: Mapped[Optional[dict]] = mapped_column(JSON)  # arbitrary event metadata
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    job_posting_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=utc_now, index=True)
+    source: Mapped[Optional[str]] = mapped_column(String(50))
+    payload: Mapped[Optional[dict]] = mapped_column(JSON)
     description: Mapped[Optional[str]] = mapped_column(String(500))
-
     job_posting: Mapped["JobPosting"] = relationship(back_populates="events")
 
 
-# =============================================================================
-# Job Embedding — standalone table for pgvector (spec §Embeddings)
-# =============================================================================
-
 class JobEmbedding(Base):
     __tablename__ = "job_embeddings"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)                 # embedding_id
-    job_posting_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), nullable=False, unique=True)  # job_id
-    vector: Mapped[List[float]] = mapped_column(Vector(384), nullable=False)   # vector (384-dim MiniLM)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_posting_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), nullable=False, unique=True)
+    vector: Mapped[List[float]] = mapped_column(Vector(384), nullable=False)
     model_name: Mapped[str] = mapped_column(String(200), default="all-MiniLM-L6-v2")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
     job_posting: Mapped["JobPosting"] = relationship(back_populates="embedding")
+    __table_args__ = (Index("ix_job_embeddings_vector", "vector", postgresql_using="ivfflat", postgresql_with={"lists": 100}),)
 
-    __table_args__ = (
-        Index("ix_job_embeddings_vector", "vector", postgresql_using="ivfflat",
-              postgresql_with={"lists": 100}),
-    )
-
-
-# =============================================================================
-# Job Skills
-# =============================================================================
 
 class JobSkill(Base):
     __tablename__ = "job_skills"
-
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     job_posting_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), nullable=False, index=True)
     skill: Mapped[str] = mapped_column(String(200), nullable=False)
     skill_normalized: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
     skill_category: Mapped[Optional[str]] = mapped_column(String(100))
-
     job_posting: Mapped["JobPosting"] = relationship(back_populates="skills")
+    __table_args__ = (UniqueConstraint("job_posting_id", "skill_normalized", name="uq_job_skills"),)
 
-    __table_args__ = (
-        UniqueConstraint("job_posting_id", "skill_normalized", name="uq_job_skills_posting_skill"),
-    )
-
-
-# =============================================================================
-# Repost Events
-# =============================================================================
 
 class RepostEvent(Base):
     __tablename__ = "repost_events"
-
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     job_posting_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), nullable=False, index=True)
     job_identity_key: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
     occurrence_number: Mapped[int] = mapped_column(Integer, nullable=False)
     date_seen: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
-    source: Mapped[Optional[str]] = mapped_column(SAEnum(JobSource))
+    source: Mapped[Optional[str]] = mapped_column(String(50))
     days_since_previous: Mapped[Optional[int]] = mapped_column(Integer)
-
     job_posting: Mapped["JobPosting"] = relationship(back_populates="repost_events")
 
 
-# =============================================================================
-# Source Sightings — cross-platform tracking
-# =============================================================================
-
 class JobSourceSighting(Base):
     __tablename__ = "job_source_sightings"
-
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     job_posting_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), nullable=False, index=True)
-    source: Mapped[str] = mapped_column(SAEnum(JobSource), nullable=False)
+    source: Mapped[str] = mapped_column(String(50), nullable=False)
     source_url: Mapped[Optional[str]] = mapped_column(String(1000))
     external_id: Mapped[Optional[str]] = mapped_column(String(255))
-    first_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    first_seen: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     applicant_count: Mapped[Optional[int]] = mapped_column(Integer)
-
     job_posting: Mapped["JobPosting"] = relationship(back_populates="source_sightings")
+    __table_args__ = (UniqueConstraint("job_posting_id", "source", name="uq_sightings_posting_source"),)
 
-    __table_args__ = (
-        UniqueConstraint("job_posting_id", "source", name="uq_sightings_posting_source"),
-    )
-
-
-# =============================================================================
-# Salary Benchmarks
-# =============================================================================
 
 class SalaryBenchmark(Base):
     __tablename__ = "salary_benchmarks"
-
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     title_normalized: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
     metro_area: Mapped[Optional[str]] = mapped_column(String(200))
-    seniority: Mapped[Optional[str]] = mapped_column(SAEnum(SeniorityLevel))
+    seniority: Mapped[Optional[str]] = mapped_column(String(50))
     salary_p25: Mapped[Optional[int]] = mapped_column(Integer)
     salary_p50: Mapped[int] = mapped_column(Integer, nullable=False)
     salary_p75: Mapped[Optional[int]] = mapped_column(Integer)
     sample_size: Mapped[int] = mapped_column(Integer, default=0)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    __table_args__ = (UniqueConstraint("title_normalized", "metro_area", "seniority", name="uq_salary_benchmark"),)
 
-    __table_args__ = (
-        UniqueConstraint("title_normalized", "metro_area", "seniority", name="uq_salary_benchmark"),
-    )
+
+class LocationCache(Base):
+    __tablename__ = "location_cache"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    location_key: Mapped[str] = mapped_column(String(500), nullable=False, unique=True, index=True)
+    location_raw: Mapped[str] = mapped_column(String(500), nullable=False)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, default="nominatim")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="pending", index=True)
+    city: Mapped[Optional[str]] = mapped_column(String(200))
+    state: Mapped[Optional[str]] = mapped_column(String(100))
+    country: Mapped[Optional[str]] = mapped_column(String(100))
+    metro_area: Mapped[Optional[str]] = mapped_column(String(200))
+    latitude: Mapped[Optional[float]] = mapped_column(Float)
+    longitude: Mapped[Optional[float]] = mapped_column(Float)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[Optional[str]] = mapped_column(String(1000))
+    last_attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)

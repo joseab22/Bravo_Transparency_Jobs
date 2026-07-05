@@ -1,126 +1,309 @@
-"""
-Core unit tests — normalizer, scoring, identity key.
-Run: pytest tests/ -v
-"""
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
+from sqlalchemy.orm import configure_mappers
+
+from app.core.config import KNOWN_SOURCES, Settings
+from app.models.models import Base, JobPosting, LocationCache
 from app.services.normalizer import (
-    normalize_title, extract_seniority, extract_skills,
-    build_job_identity_key, normalize_location_text,
+    annualize_salary,
+    build_identity_fingerprint,
+    build_job_identity_key,
+    calculate_days_active,
+    decompose_title,
+    extract_seniority,
+    extract_skills,
+    infer_location_components,
+    normalize_company_name,
+    normalize_employment_type,
+    normalize_location_text,
+    normalize_remote_type,
+    normalize_title,
+    prepare_job_record,
 )
-from app.services.scoring import ScoringService
+from app.services.repost_detector import RepostDetectionService
+from app.workers.scrapers import SCRAPER_REGISTRY
+from app.workers.scrapers.simplify import SimplifyScraper
 
 
-# ---------------------------------------------------------------------------
-# Title normalizer
-# ---------------------------------------------------------------------------
-
-class TestNormalizeTitle:
-    def test_bi_alias(self):
-        assert normalize_title("Business Intelligence Analyst") == "data analyst"
-    def test_swe_alias(self):
-        assert normalize_title("SWE II") == "software engineer"
-    def test_ml_alias(self):
-        assert normalize_title("ML Engineer") == "machine learning engineer"
-    def test_output_lowercase(self):
-        assert normalize_title("Data Scientist") == normalize_title("data scientist")
-    def test_sde_alias(self):
-        assert normalize_title("SDE") == "software engineer"
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("SWE II", "software engineer"),
+        ("SDE", "software engineer"),
+        ("Business Intelligence Analyst", "data analyst"),
+        ("ML Engineer", "machine learning engineer"),
+        ("Site Reliability Engineer", "site reliability engineer"),
+        ("Senior Backend Engineer", "software engineer"),
+    ],
+)
+def test_title_family_normalization(raw, expected):
+    assert normalize_title(raw) == expected
 
 
-class TestExtractSeniority:
-    def test_senior(self):
-        assert extract_seniority("Senior Data Analyst") == "senior"
-    def test_junior(self):
-        assert extract_seniority("Junior Software Engineer") == "entry"
-    def test_lead(self):
-        assert extract_seniority("Lead Data Engineer") == "lead"
-    def test_default_mid(self):
-        assert extract_seniority("Data Analyst") == "mid"
-    def test_sr_abbreviation(self):
-        assert extract_seniority("Sr. Software Engineer") == "senior"
+def test_decompose_title_preserves_specialization():
+    admin = decompose_title("Senior Software Engineer - Admin")
+    lead = decompose_title("Senior Software Engineer - Lead")
+    assert admin["job_family"] == lead["job_family"] == "software engineer"
+    assert admin["seniority"] == lead["seniority"] == "Senior"
+    assert admin["specialization"] == "admin"
+    assert lead["specialization"] == "tech_lead"
 
 
-class TestExtractSkills:
-    def test_python_sql(self):
-        skills = extract_skills("Must know Python and SQL.")
-        names = {s["skill"] for s in skills}
-        assert "Python" in names and "SQL" in names
-    def test_empty(self):
-        assert extract_skills("") == []
-    def test_aws_cloud_category(self):
-        skills = extract_skills("Experience with AWS required.")
-        cats = {s["skill"]: s["skill_category"] for s in skills}
-        assert cats.get("AWS") == "Cloud"
-    def test_docker_devops_category(self):
-        skills = extract_skills("Docker and Kubernetes experience preferred.")
-        cats = {s["skill"]: s["skill_category"] for s in skills}
-        assert cats.get("Docker") == "DevOps"
+def test_unknown_title_is_not_forced_into_wrong_family():
+    result = decompose_title("Developer Experience Evangelist")
+    assert result["job_family"] is None
+    assert result["title_normalized"]
+    assert result["confidence"] < 0.8
 
 
-class TestJobIdentityKey:
-    def test_basic_key_slugs(self):
-        key = build_job_identity_key("TechCorp Inc.", "data analyst", "Los Angeles")
-        assert "techcorp" in key
-        assert "data_analyst" in key
-        assert "los_angeles" in key
-    def test_no_metro(self):
-        key = build_job_identity_key("Acme", "engineer", None)
-        assert "acme" in key
-    def test_special_chars_stripped(self):
-        key = build_job_identity_key("Tech-Corp, LLC.", "data analyst", None)
-        assert "." not in key
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("Sr. Engineer", "Senior"), ("Principal Engineer", "Lead"), ("Intern", "Entry"), ("Data Analyst", "Mid")],
+)
+def test_seniority(raw, expected):
+    assert extract_seniority(raw) == expected
 
 
-class TestLocationNorm:
-    def test_la(self):
-        assert normalize_location_text("la") == "Los Angeles"
-    def test_sf(self):
-        assert normalize_location_text("sf") == "San Francisco"
-    def test_nyc(self):
-        assert normalize_location_text("nyc") == "New York"
-    def test_unknown_passthrough(self):
-        assert normalize_location_text("Kalamazoo, MI") == "Kalamazoo, MI"
+def test_company_normalization():
+    assert normalize_company_name("Acme Technologies, Inc.") == "acme technologies"
 
 
-# ---------------------------------------------------------------------------
-# Scoring (unit — no DB)
-# ---------------------------------------------------------------------------
-
-class FakeJob:
-    def __init__(self, **kwargs):
-        defaults = dict(
-            repost_count=0, days_active=5, applicant_count=30,
-            salary_listed=True, company=None, ghost_job_probability=0.1,
-            salary_min=80000, salary_max=100000, job_identity_key="test__analyst__la",
-        )
-        defaults.update(kwargs)
-        for k, v in defaults.items():
-            setattr(self, k, v)
+def test_identity_fingerprint_is_location_independent():
+    first = build_identity_fingerprint("Acme", "software engineer", "backend", "Senior", "Full-time", "Remote")
+    second = build_identity_fingerprint("Acme", "software engineer", "backend", "Senior", "Full-time", "Remote")
+    assert first == second and len(first) == 64
 
 
-class TestScoringService:
-    def setup_method(self):
-        self.scorer = ScoringService()
+def test_identity_key_contains_location_bucket_but_stable_fingerprint():
+    first = build_job_identity_key("Acme", "software engineer", "New York, NY", specialization="backend", seniority="Senior", employment_type="Full-time", remote_type="Onsite")
+    second = build_job_identity_key("Acme", "software engineer", "Austin, TX", specialization="backend", seniority="Senior", employment_type="Full-time", remote_type="Onsite")
+    assert first != second
+    assert "acme" in first
 
-    def test_health_score_in_range(self):
-        score = self.scorer._health_score(FakeJob(), ghost_prob=0.1)
-        assert 0 <= score <= 100
 
-    def test_high_ghost_lowers_health(self):
-        good = self.scorer._health_score(FakeJob(days_active=3, applicant_count=20, salary_listed=True), ghost_prob=0.05)
-        bad  = self.scorer._health_score(FakeJob(days_active=200, applicant_count=2000, salary_listed=False), ghost_prob=0.92)
-        assert good > bad
+def test_remote_locations_share_bucket():
+    first = build_job_identity_key("Acme", "software engineer", "California", remote_type="Remote")
+    second = build_job_identity_key("Acme", "software engineer", "New York", remote_type="Remote")
+    assert first == second
 
-    def test_competition_high(self):
-        assert self.scorer._competition_score(FakeJob(applicant_count=1500)) >= 90
 
-    def test_competition_low(self):
-        assert self.scorer._competition_score(FakeJob(applicant_count=15)) <= 30
+def test_location_normalization_has_no_network_dependency():
+    assert normalize_location_text("San Francisco, California") == "San Francisco, CA"
+    assert infer_location_components("Remote")["metro_area"] == "Remote"
 
-    def test_activity_score_fresh(self):
-        score = self.scorer._activity_score(FakeJob(days_active=3, repost_count=0, salary_listed=True))
-        assert score > 70
 
-    def test_activity_score_stale(self):
-        score = self.scorer._activity_score(FakeJob(days_active=200, repost_count=8, salary_listed=False))
-        assert score < 40
+def test_work_arrangement_and_employment_normalization():
+    assert normalize_remote_type(None, "Remote - US") == "Remote"
+    assert normalize_remote_type("Hybrid", "Boston") == "Hybrid"
+    assert normalize_employment_type(None, "Software Engineering Intern") == "Internship"
+
+
+def test_salary_annualization():
+    assert annualize_salary(50, 60, "hour") == (104000, 124800)
+    assert annualize_salary("$100,000", "$120,000", "year") == (100000, 120000)
+
+
+def test_skill_extraction():
+    names = {item["skill"] for item in extract_skills("Python, SQL, AWS, Docker and Kubernetes")}
+    assert {"Python", "SQL", "AWS", "Docker", "Kubernetes"} <= names
+
+
+def test_days_active_uses_oldest_valid_observation():
+    now = datetime(2026, 7, 5)
+    assert calculate_days_active(datetime(2026, 7, 1), datetime(2026, 7, 3), now) == 4
+
+
+def test_prepare_job_record_centralizes_source_normalization():
+    record = prepare_job_record({
+        "source": "SIMPLIFY",
+        "company_name": "Acme Inc.",
+        "title_raw": "Senior Backend Software Engineer",
+        "location_raw": "Remote - US",
+        "description_raw": "Python and AWS",
+    })
+    assert record["source"] == "simplify"
+    assert record["job_family"] == "software engineer"
+    assert record["remote_type"] == "Remote"
+    assert record["identity_fingerprint"]
+    assert record["skills"]
+
+
+def fake_job(**overrides):
+    now = datetime(2026, 7, 5)
+    values = dict(
+        id=1,
+        company_id=1,
+        title_normalized="software engineer",
+        job_family="software engineer",
+        specialization=None,
+        seniority="Senior",
+        employment_type="Full-time",
+        remote_type="Remote",
+        metro_area="Remote",
+        location_raw="Remote",
+        latitude=None,
+        longitude=None,
+        embedding=None,
+        date_posted=now,
+        date_first_seen=now,
+        date_last_seen=now,
+        created_at=now,
+        is_active=True,
+        canonical_job_id=None,
+        repost_count=0,
+    )
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+def test_different_specializations_do_not_merge():
+    service = RepostDetectionService()
+    assert not service.roles_match(fake_job(specialization="admin"), fake_job(id=2, specialization="tech_lead"))
+
+
+def test_remote_and_onsite_do_not_merge():
+    service = RepostDetectionService()
+    assert not service.roles_match(fake_job(remote_type="Remote"), fake_job(id=2, remote_type="Onsite"))
+
+
+def test_simultaneous_remote_regions_are_parallel():
+    service = RepostDetectionService()
+    first = fake_job(location_raw="California", metro_area="California")
+    second = fake_job(id=2, location_raw="New York", metro_area="New York", date_posted=first.date_posted + timedelta(hours=4))
+    assert service.classify_pair(second, first) == "parallel"
+
+
+def test_closed_role_after_gap_is_repost():
+    service = RepostDetectionService()
+    first = fake_job(is_active=False, date_last_seen=datetime(2026, 6, 1), date_first_seen=datetime(2026, 5, 1), date_posted=datetime(2026, 5, 1))
+    second = fake_job(id=2, date_first_seen=datetime(2026, 6, 20), date_posted=datetime(2026, 6, 20))
+    assert service.classify_pair(second, first) == "repost"
+
+
+def test_closed_role_in_different_onsite_metro_is_not_repost():
+    service = RepostDetectionService()
+    first = fake_job(remote_type="Onsite", metro_area="New York, NY", location_raw="New York, NY", is_active=False, date_last_seen=datetime(2026, 6, 1), date_first_seen=datetime(2026, 5, 1), date_posted=datetime(2026, 5, 1))
+    second = fake_job(id=2, remote_type="Onsite", metro_area="Austin, TX", location_raw="Austin, TX", date_first_seen=datetime(2026, 6, 20), date_posted=datetime(2026, 6, 20))
+    assert service.classify_pair(second, first) == "original"
+
+
+def test_orm_matches_migrations():
+    configure_mappers()
+    assert len(Base.metadata.tables) == 10
+    for name in ("identity_fingerprint", "canonical_job_id", "listing_classification", "job_family", "active_hiring_confidence"):
+        assert name in JobPosting.__table__.columns
+    assert len(LocationCache.__table__.columns) == 16
+
+
+def test_registry_covers_known_sources():
+    assert set(SCRAPER_REGISTRY) == KNOWN_SOURCES
+
+
+def test_default_schedule_enables_only_simplify():
+    settings = Settings(_env_file=None)
+    assert settings.enabled_source_set == {"simplify"}
+
+
+def test_scrapers_do_not_call_geocoder_in_parsers():
+    scraper_dir = Path(__file__).parents[1] / "app" / "workers" / "scrapers"
+    for path in scraper_dir.glob("*.py"):
+        if path.name == "__init__.py":
+            continue
+        assert "geocode_location(" not in path.read_text(), path.name
+
+
+def test_simplify_parser_handles_multiple_locations_without_geocoding():
+    job = SimplifyScraper().parse_job({
+        "id": "abc",
+        "title": "Software Engineer Intern",
+        "company_name": "Acme",
+        "locations": ["Remote", "San Francisco, CA"],
+        "url": "https://example.test/job",
+        "description": "Python",
+        "date_posted": "2026-07-01",
+    })
+    assert job is not None
+    assert job["location_raw"] == "Remote | San Francisco, CA"
+    assert job["employment_type"] == "Internship"
+    assert "latitude" not in job
+
+
+def test_scoring_weights_validate():
+    with pytest.raises(ValueError):
+        Settings(_env_file=None, ghost_job_repost_weight=0.9)
+
+@pytest.mark.asyncio
+async def test_ingestion_preserves_parallel_stable_ids(tmp_path):
+    from sqlalchemy import func, select
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from app.db.base import Base
+    from app.models.models import JobPosting
+    from app.workers.ingestion import ingest_jobs
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'ingest.db'}")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+    jobs = [
+        {"source": "simplify", "external_id": "req-1", "source_url": "https://example/1", "company_name": "Acme", "title_raw": "Senior Backend Software Engineer", "location_raw": "Remote - CA"},
+        {"source": "simplify", "external_id": "req-2", "source_url": "https://example/2", "company_name": "Acme", "title_raw": "Senior Backend Software Engineer", "location_raw": "Remote - NY"},
+    ]
+    async with Session() as db:
+        result = await ingest_jobs(jobs, db)
+        count = await db.scalar(select(func.count(JobPosting.id)))
+    await engine.dispose()
+    assert result == {"total": 2, "created": 2, "updated": 0, "errors": 0}
+    assert count == 2
+
+@pytest.mark.asyncio
+async def test_ingestion_updates_prefetched_stable_ids_without_duplication(tmp_path):
+    from sqlalchemy import func, select
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from app.db.base import Base
+    from app.models.models import JobPosting
+    from app.workers.ingestion import ingest_jobs
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'repeat.db'}")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+    original = {
+        "source": "simplify",
+        "external_id": "req-1",
+        "source_url": "https://example/1",
+        "company_name": "Acme",
+        "title_raw": "Senior Backend Software Engineer",
+        "location_raw": "Remote - CA",
+        "applicant_count": 10,
+    }
+    updated = dict(original, applicant_count=25)
+    async with Session() as db:
+        first = await ingest_jobs([original], db)
+        second = await ingest_jobs([updated], db)
+        count = await db.scalar(select(func.count(JobPosting.id)))
+        job = (await db.execute(select(JobPosting))).scalar_one()
+    await engine.dispose()
+
+    assert first["created"] == 1
+    assert second == {"total": 1, "created": 0, "updated": 1, "errors": 0}
+    assert count == 1
+    assert job.applicant_count == 25
+
+
+def test_title_similarity_is_model_free_by_default(monkeypatch):
+    from app.core.config import settings
+    from app.services import repost_detector
+
+    monkeypatch.setattr(settings, "semantic_title_matching_enabled", False)
+
+    def fail_if_loaded():
+        raise AssertionError("embedding model should not load")
+
+    monkeypatch.setattr(repost_detector, "get_embedding_model", fail_if_loaded)
+    score = repost_detector.title_similarity("backend software engineer", "software engineer backend")
+    assert 0 < score < 1

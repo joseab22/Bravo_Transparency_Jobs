@@ -1,39 +1,17 @@
 # Validation
 
-## Structured identity implementation
+Validated for this audited release:
 
-The structured-identity source tree was validated with:
+- Python compilation for application and migration files.
+- 36 focused backend tests covering title decomposition, identity fingerprints, location handling, original/parallel/repost classification, scraper registry, no-geocoding parser policy, stable-ID creation and update behavior, model-free default title matching, and ORM/migration columns.
+- SQLAlchemy mapper configuration: 10 tables, 56 `job_postings` columns, and 16 `location_cache` columns.
+- Celery import: eight JobLens tasks and enabled-source-only scheduling.
+- Alembic offline PostgreSQL SQL generation through `0003_location_cache`.
+- FastAPI health endpoint and route import.
+- Frontend TypeScript check.
+- Frontend ESLint with zero warnings.
+- Next.js production build.
+- Production frontend dependency audit with no reported vulnerabilities.
+- JSON/YAML parsing, required-file checks, and secret/local-artifact scanning before packaging.
 
-- 28 backend tests passing
-- Alembic revision-chain and offline PostgreSQL SQL generation through `0002_structured_identity`
-- SQLAlchemy mapper and FastAPI health-endpoint imports
-- Celery application import and scheduled-task loading
-- frontend TypeScript checking
-- frontend ESLint with no warnings
-- Next.js production build
-
-## Merged scraper-reliability archive
-
-The final merged archive was checked for:
-
-- Python compilation of backend application, tests, and migrations
-- valid JSON in `frontend/.eslintrc.json`
-- presence of both Alembic revisions
-- presence of structured-identity and scraper-reliability documentation
-- ZIP integrity
-
-The full backend suite was not rerun in the packaging environment because its local Python runtime did not include `pgvector`. The Docker backend requirements include `pgvector`, so run the final verification locally with:
-
-```bash
-docker compose down
-docker compose up -d --build
-docker compose exec backend alembic current
-docker compose exec backend pytest -q
-cd frontend && npm run lint && npm run build
-```
-
-Expected Alembic revision:
-
-```text
-0002_structured_identity
-```
+Docker runtime could not be executed inside the editing sandbox. The local next step is `docker compose up -d --build`, followed by the commands in the README.

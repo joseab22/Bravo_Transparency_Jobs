@@ -1,12 +1,7 @@
-"""
-Indeed scraper adapter.
+"""Indeed-labelled listings via JSearch on RapidAPI.
 
-Uses the JSearch API via RapidAPI (most reliable programmatic access).
-Endpoint: https://jsearch.p.rapidapi.com/search
-
-Keys required: RAPIDAPI_KEY in .env
-Sign up: https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch
-Free tier: 100 req/month | Basic: 500/month
+Requires RAPIDAPI_KEY. Parsing is network-free; location enrichment is handled
+separately.
 """
 
 import asyncio
@@ -16,7 +11,7 @@ import structlog
 
 from app.core.config import settings
 from app.services.normalizer import (
-    normalize_title, extract_seniority, geocode_location,
+    normalize_title, extract_seniority,
     normalize_location_text, extract_skills, build_job_identity_key,
 )
 from app.workers.scrapers.base import BaseScraperAdapter
@@ -72,8 +67,8 @@ class IndeedScraper(BaseScraperAdapter):
             location_raw = f"{raw.get('job_city', '')}, {raw.get('job_state', '')}".strip(", ")
             title_normalized = normalize_title(title_raw)
             seniority = extract_seniority(title_raw)
-            geo = geocode_location(location_raw) if location_raw else None
-            metro = geo[2] if geo else normalize_location_text(location_raw)
+            geo = None
+            metro = normalize_location_text(location_raw)
 
             sal_min, sal_max = self._normalize_salary(raw)
             description = raw.get("job_description", "")

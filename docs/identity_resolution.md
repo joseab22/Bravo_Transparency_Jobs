@@ -1,80 +1,65 @@
-# Structured Job Identity and Repost Classification
+# Identity Resolution
 
-JobLens uses a hybrid rules-first approach designed initially for technology jobs.
+JobLens treats a posting as structured data rather than one normalized title string.
 
-## Title decomposition
+## Title structure
 
-`decompose_title()` converts a raw title into:
+`decompose_title()` extracts:
 
-- `job_family` — stable role family such as `software engineer` or `data engineer`
-- `seniority` — `entry`, `mid`, `senior`, `lead`, or `executive`
-- `specialization` — sorted tags such as `backend`, `platform`, `admin`, or `tech_lead`
-- `title_parse_confidence` — confidence that the controlled taxonomy recognized the role
+- canonical technology job family;
+- seniority;
+- zero or more specialization tags;
+- parse confidence.
 
-Known structured fields are compared before any embedding model is used. This keeps decisions explainable and prevents distinct roles such as `admin` and `tech_lead` from being collapsed.
+Example:
 
-## Two identity values
+```text
+Senior Software Engineer - Admin
+→ family: software engineer
+→ seniority: Senior
+→ specialization: admin
+```
 
-`job_identity_key` is human-readable and includes the location bucket for onsite/hybrid work. Remote roles always use the `remote` location bucket.
+```text
+Senior Software Engineer - Lead
+→ family: software engineer
+→ seniority: Senior
+→ specialization: tech_lead
+```
 
-`identity_fingerprint` is a location-independent SHA-256 value used to find related remote or multi-location listings. Location compatibility is decided by the classifier rather than encoded permanently into this fingerprint.
+Those roles are not merged.
 
-## Classification rules
+## Listing identity
 
-The ingestion pipeline first updates an existing row only when it has a stable source match:
+The location-independent fingerprint includes company, job family, specialization, seniority, employment type, and work arrangement. The human-readable key also includes a location bucket.
 
-1. same source and external ID;
-2. otherwise same source URL;
-3. otherwise a recent identical source record when the feed has neither.
+Ingestion upserts only on stable source identifiers or URLs when available. It does not collapse distinct source IDs merely because their titles and locations are similar, which preserves simultaneous headcount listings.
 
-A newly inserted listing is then compared with earlier listings from the same company:
+## Classification
 
-### Duplicate
+- **Original:** no compatible earlier occurrence.
+- **Parallel:** compatible listings overlap in time or are posted within the configured parallel window. Remote or regional advertisements can be parallel.
+- **Repost:** a compatible earlier listing was inactive before the new occurrence, the minimum gap elapsed, and location/work arrangement is compatible.
 
-Same source and same external ID. The ingestion pipeline normally updates this record in place.
+Remote and onsite listings are not equivalent. Distinct non-empty specializations are not merged. Structured fields are primary; lexical title matching is bounded to the most recent candidate set. Semantic title matching and description embeddings are opt-in so a large history rebuild does not unexpectedly download or run a model.
 
-### Parallel
+Relevant settings:
 
-A related title with a different external ID is classified as parallel when:
+```env
+PARALLEL_LISTING_WINDOW_DAYS=2
+REPOST_MIN_GAP_DAYS=7
+CANDIDATE_HISTORY_DAYS=365
+IDENTITY_CANDIDATE_LIMIT=100
+SEMANTIC_TITLE_MATCHING_ENABLED=false
+DESCRIPTION_EMBEDDINGS_ENABLED=false
+```
 
-- it was posted within `PARALLEL_LISTING_WINDOW_DAYS`; or
-- an earlier related listing is still active in the same location/remote scope; or
-- a closed listing reopens before `REPOST_MIN_GAP_DAYS`.
+## Analysis lifecycle
 
-This includes remote postings advertised in different states and simultaneous multi-location postings. Parallel listings remain separate database observations but share a `canonical_job_id`, allowing them to contribute evidence of active headcount without increasing repost counts.
+Collection inserts and updates records first. The authoritative historical pass is:
 
-### Repost
+```text
+joblens.run_repost_detection
+```
 
-A repost requires all of the following:
-
-- compatible company, role family, specialization, seniority, and employment type;
-- compatible remote/location scope;
-- the previous related listing is inactive;
-- the new listing returns at least `REPOST_MIN_GAP_DAYS` after the previous listing was last seen.
-
-### Original
-
-A listing is original when no prior listing satisfies the parallel or repost rules.
-
-## Semantic fallback
-
-Sentence-transformer title similarity is only used when at least one title has low taxonomy confidence. High-confidence titles with different known families or different non-empty specializations are not overridden by embeddings. When either title lacks a specialization, stored job-description embeddings must also meet `DESCRIPTION_SIMILARITY_THRESHOLD` before the listings can share a parallel or repost chain.
-
-## Active Hiring Confidence
-
-`active_hiring_confidence` is a 0–100 positive-facing score combining:
-
-- inverse ghost-job probability;
-- posting freshness;
-- activity score;
-- applicant trend;
-- number of related active listings;
-- original/parallel/repost classification.
-
-Parallel active openings provide modest positive evidence. Verified reposts reduce confidence and increase ghost-job probability.
-
-## Scraper and ingestion reliability
-
-Identity resolution depends on receiving stable, non-duplicated observations. All HTTP adapters now use the shared `BaseScraperAdapter.request_json()` path for `429`, `Retry-After`, exponential-backoff, jitter, temporary `5xx`, timeout, and network handling.
-
-Celery also acquires a Redis lock per source before scraping. A second task for the same source is skipped while the first is active. This prevents overlapping fetches from creating avoidable upstream traffic or duplicate ingestion attempts. These protections do not change the original/parallel/repost rules; they make the input stream more reliable.
+It rebuilds classification for the configured history window and only replaces repost events associated with the processed jobs. Any classification change clears old scores so Active Hiring Confidence is recalculated from current history.

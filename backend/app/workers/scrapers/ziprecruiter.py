@@ -1,21 +1,7 @@
-"""
-ZipRecruiter scraper adapter.
+"""ZipRecruiter publisher/API adapter.
 
-Integration options:
-
-OPTION A — ZipRecruiter Publisher API (recommended):
-  Free for registered publishers.
-  https://www.ziprecruiter.com/publishers
-  Endpoint: https://api.ziprecruiter.com/jobs/v1
-  Env vars: ZIPRECRUITER_API_KEY
-
-OPTION B — RapidAPI ZipRecruiter endpoint:
-  https://rapidapi.com/search/ziprecruiter
-  Env vars: RAPIDAPI_KEY
-
-NOTE: ZipRecruiter's Publisher API is one of the most straightforward job APIs.
-It returns structured JSON with salary, location, and applicant-friendly fields.
-Apply at ziprecruiter.com/publishers for a free API key.
+Requires ZIPRECRUITER_API_KEY. Parsing is network-free; location enrichment is
+handled separately.
 """
 
 import asyncio
@@ -25,7 +11,7 @@ import structlog
 
 from app.core.config import settings
 from app.services.normalizer import (
-    normalize_title, extract_seniority, geocode_location,
+    normalize_title, extract_seniority,
     extract_skills, build_job_identity_key, normalize_location_text,
 )
 from app.workers.scrapers.base import BaseScraperAdapter
@@ -77,8 +63,8 @@ class ZipRecruiterScraper(BaseScraperAdapter):
             state = raw.get("state")
             title_normalized = normalize_title(title_raw)
             seniority = extract_seniority(title_raw)
-            geo = geocode_location(location_raw) if location_raw else None
-            metro = geo[2] if geo else normalize_location_text(location_raw)
+            geo = None
+            metro = normalize_location_text(location_raw)
             description = raw.get("snippet", raw.get("description", ""))
             skills = extract_skills(description)
             identity_key = build_job_identity_key(company_name, title_normalized, metro)

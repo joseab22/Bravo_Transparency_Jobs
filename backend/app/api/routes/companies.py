@@ -1,55 +1,42 @@
+from __future__ import annotations
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
-from typing import Optional
 
 from app.db.session import get_db
 from app.models.models import Company, JobPosting
-from app.schemas.jobs import CompanyOut
+from app.schemas.jobs import CompanyOut, JobPostingListItem
 
 router = APIRouter(prefix="/companies", tags=["companies"])
 
 
 @router.get("/", response_model=list[CompanyOut])
 async def list_companies(
-    q: Optional[str] = None,
-    industry: Optional[str] = None,
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    q: str | None = None,
+    limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
 ):
-    query = select(Company)
+    query = select(Company).order_by(Company.hiring_intensity.desc().nullslast(), Company.name)
     if q:
         query = query.where(Company.name.ilike(f"%{q}%"))
-    if industry:
-        query = query.where(Company.industry == industry)
-    query = query.offset((page - 1) * page_size).limit(page_size)
-    result = await db.execute(query)
-    return result.scalars().all()
+    return list((await db.execute(query.limit(limit))).scalars())
 
 
 @router.get("/{company_id}", response_model=CompanyOut)
 async def get_company(company_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Company).where(Company.id == company_id))
-    company = result.scalar_one_or_none()
+    company = await db.get(Company, company_id)
     if not company:
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(404, "Company not found")
     return company
 
 
-@router.get("/{company_id}/jobs")
-async def get_company_jobs(
-    company_id: int,
-    active_only: bool = True,
-    db: AsyncSession = Depends(get_db),
-):
-    query = (
-        select(JobPosting)
-        .options(selectinload(JobPosting.skills), selectinload(JobPosting.source_sightings))
-        .where(JobPosting.company_id == company_id)
-    )
+@router.get("/{company_id}/jobs", response_model=list[JobPostingListItem])
+async def company_jobs(company_id: int, active_only: bool = True, db: AsyncSession = Depends(get_db)):
+    query = select(JobPosting).options(
+        selectinload(JobPosting.company), selectinload(JobPosting.skills), selectinload(JobPosting.source_sightings)
+    ).where(JobPosting.company_id == company_id)
     if active_only:
-        query = query.where(JobPosting.is_active == True)
-    result = await db.execute(query)
-    return result.scalars().all()
+        query = query.where(JobPosting.is_active.is_(True))
+    return list((await db.execute(query.order_by(JobPosting.active_hiring_confidence.desc().nullslast()))).scalars().unique())

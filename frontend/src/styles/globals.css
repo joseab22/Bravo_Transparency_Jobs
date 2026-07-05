@@ -18,3 +18,9 @@ body {
   .score-med  { @apply text-amber-700 bg-amber-50 border-amber-200; }
   .score-high { @apply text-red-700 bg-red-50 border-red-200; }
 }
+
+.confidence { font-size: 1.75rem; font-weight: 700; }
+.confidence.high { color: rgb(103 232 249); }
+.confidence.medium { color: rgb(253 224 71); }
+.confidence.low { color: rgb(252 165 165); }
+.confidence.unknown { color: rgb(148 163 184); }

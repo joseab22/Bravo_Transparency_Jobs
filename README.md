@@ -1,228 +1,173 @@
-# JobLens — Job Market Transparency Tracker
+# JobLens — Job Market Transparency
 
-A labor market intelligence platform that surfaces hidden hiring signals across 8 job boards:
-**active hiring confidence · structured identity · repost detection · cross-platform tracking · salary transparency**
+JobLens collects technology job postings over time and estimates **Active Hiring Confidence** from observable signals such as posting recency, repeated sightings, parallel openings, repost history, compensation disclosure, applicants, and company behavior.
 
----
+The score is an estimate of posting activity—not proof of employer intent.
 
-## What it does
+## What changed in this audited release
 
-| Signal | How |
-|--------|-----|
-| Ghost job probability | Weighted model: repost count, days active, applicant volume, salary listing, company rating, similar history |
-| Structured identity | Tech-focused title decomposition into job family, seniority, and specialization |
-| Parallel vs. repost detection | Stable source IDs, timing, active state, remote/location scope, and semantic fallback |
-| Active Hiring Confidence | Positive-facing score combining freshness, activity, related openings, and ghost-job signals |
-| Cross-platform tracking | Tracks every platform a job appears on via `job_source_sightings` |
-| Salary fairness | Compares posted salary to `salary_benchmarks` (p50 by title + metro + seniority) |
-| Applicant trend | Slope of applicant count over time from `job_snapshots` |
-| Description change score | SHA-256 diff across snapshot history — title/description rewrites are a ghost signal |
-| Activity score | Composite hiring velocity signal per posting |
-| Scraper reliability | Shared `429`/`Retry-After` backoff, jitter, transient-error retries, and Redis per-source locks |
+- Centralized tech-title decomposition into job family, seniority, and specialization.
+- Preserves separate source listings instead of collapsing simultaneous openings.
+- Classifies listings as `original`, `parallel`, or `repost` after collection.
+- Handles remote and multi-location advertisements independently from repost detection.
+- Removes per-job geocoding from all scraper parsers.
+- Adds cached, opt-in geocoding for unique locations.
+- Adds shared HTTP retries, `Retry-After`, exponential backoff, jitter, and source locks.
+- Prefetches stable IDs and companies, commits large feeds in batches, and throttles unchanged snapshots.
+- Keeps semantic title matching and description embeddings opt-in so analysis does not download a model unexpectedly.
+- Moves embeddings and scoring into deliberate background analysis tasks.
+- Aligns ORM models, API schemas, frontend types, Alembic migrations, tests, and documentation.
 
----
+## Architecture
 
-## Job Sources
-
-| Source | Adapter | Method | Key Required |
-|--------|---------|--------|-------------|
-| **Indeed** | `scrapers/indeed.py` | JSearch RapidAPI | `RAPIDAPI_KEY` |
-| **LinkedIn** | `scrapers/linkedin.py` | JSearch RapidAPI (default) or official API | `RAPIDAPI_KEY` |
-| **Glassdoor** | `scrapers/glassdoor.py` | RapidAPI Glassdoor | `RAPIDAPI_KEY` |
-| **ZipRecruiter** | `scrapers/ziprecruiter.py` | Publisher API (free) | `ZIPRECRUITER_API_KEY` |
-| **Dice** | `scrapers/dice.py` | Public API | None required |
-| **Monster** | `scrapers/monster.py` | RapidAPI Monster | `RAPIDAPI_KEY` |
-| **Jobright** | `scrapers/jobright.py` | Jobright API | `JOBRIGHT_API_KEY` |
-| **Simplify** | `scrapers/simplify.py` | Public GitHub JSON feed | None required |
-
-See `docs/sources/` for per-source setup guides.
-
-**Activation priority:** Start with Dice (no key) + Simplify (no key) → then add `RAPIDAPI_KEY` (unlocks Indeed, LinkedIn, Glassdoor, Monster) → then ZipRecruiter publisher key → then Jobright.
-
----
-
-## Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Backend API | FastAPI 0.111 (Python 3.11) |
-| Database | PostgreSQL 15 + pgvector |
-| Background jobs | Celery 5.3 + Redis 7 |
-| Embeddings | sentence-transformers `all-MiniLM-L6-v2` (384-dim) |
-| Frontend | Next.js 14 + Tailwind CSS |
-| Infrastructure | Docker Compose (dev) · Railway + Vercel (prod) |
-| CI/CD | GitHub Actions |
-
----
-
-## Project Structure
-
-```
-Bravo_Transparency_Jobs/
-├── backend/
-│   ├── app/
-│   │   ├── api/routes/          # FastAPI route handlers
-│   │   │   ├── jobs.py          # GET /jobs, GET /jobs/{id}, GET /jobs/stats
-│   │   │   └── companies.py     # GET /companies, GET /companies/{id}/jobs
-│   │   ├── core/
-│   │   │   └── config.py        # All env var settings (pydantic-settings)
-│   │   ├── db/
-│   │   │   └── session.py       # Async SQLAlchemy engine + session
-│   │   ├── models/
-│   │   │   └── models.py        # ORM: Company, JobPosting, JobSnapshot,
-│   │   │                        #   JobEvent, JobEmbedding, JobSkill,
-│   │   │                        #   RepostEvent, JobSourceSighting, SalaryBenchmark
-│   │   ├── schemas/
-│   │   │   └── jobs.py          # Pydantic request/response schemas
-│   │   ├── services/
-│   │   │   ├── normalizer.py    # Structured title decomposition + identity keys
-│   │   │   ├── repost_detector.py  # Original/parallel/repost classification
-│   │   │   └── scoring.py       # Ghost prob, health, competition, salary fairness
-│   │   ├── workers/
-│   │   │   ├── celery_app.py    # Beat schedule + Redis per-source scrape locks
-│   │   │   ├── ingestion.py     # Upsert pipeline + event firing + embeddings
-│   │   │   └── scrapers/
-│   │   │       ├── base.py      # Shared HTTP retry and rate-limit handling
-│   │   │       ├── indeed.py    #  JSearch API
-│   │   │       ├── linkedin.py  #  JSearch / official API / Playwright
-│   │   │       ├── glassdoor.py #  RapidAPI Glassdoor
-│   │   │       ├── ziprecruiter.py #  Publisher API
-│   │   │       ├── dice.py      #  Public API (no key)
-│   │   │       ├── monster.py   # RapidAPI Monster
-│   │   │       ├── jobright.py  #  Jobright API
-│   │   │       └── simplify.py  #  GitHub JSON feed (no key)
-│   │   └── scripts/
-│   │       └── seed.py          # Seed salary benchmarks
-│   ├── migrations/
-│   │   ├── env.py               # Alembic async env
-│   │   └── versions/
-│   │       ├── 0001_initial.py  # Initial schema
-│   │       └── 0002_structured_identity.py  # Identity + hiring confidence fields
-│   ├── tests/
-│   │   └── test_core.py         # Unit tests: normalizer, scoring
-│   ├── alembic.ini
-│   ├── requirements.txt
-│   └── .env.example             # All env vars documented
-├── frontend/
-│   └── src/
-│       ├── pages/               # Next.js pages (_app.tsx, index.tsx)
-│       ├── styles/globals.css   # Tailwind base styles
-│       ├── types/jobs.ts        # TypeScript interfaces
-│       └── lib/api.ts           # Axios API client
-├── infrastructure/
-│   ├── docker/
-│   │   ├── Dockerfile.backend
-│   │   └── Dockerfile.frontend
-│   ├── nginx/nginx.conf         # Reverse proxy (self-hosted)
-│   └── scripts/init_db.sql     # pgvector + pg_trgm extensions
-├── docs/
-│   ├── deployment.md            # Railway / Render / VPS setup
-│   ├── change_tracking.md       # How job changes are tracked + SQL queries
-│   ├── identity_resolution.md      # Structured identity and repost rules
-│   ├── scraper_reliability.md      # Backoff and duplicate-task protection
-│   ├── validation.md               # Validation record
-│   └── sources/                 # Per-source integration guides
-│       ├── indeed.md · linkedin.md · glassdoor.md · ziprecruiter.md
-│       └── dice.md · monster.md · jobright.md · simplify.md
-├── .github/workflows/
-│   ├── ci.yml                   # Test + build on every push
-│   └── deploy.yml               # Deploy to Railway + Vercel on main
-├── docker-compose.yml
-└── .gitignore
+```text
+Job source
+  → rate-limited scraper
+  → pure normalization
+  → batched PostgreSQL ingestion
+  → optional cached location/embedding enrichment
+  → identity-history classification
+  → Active Hiring Confidence scoring
+  → FastAPI / Next.js
 ```
 
----
-
-## Quickstart
-
-### Prerequisites
-- Docker Desktop (includes Docker Compose)
-- Git
-
-### Run locally
+## Quick start
 
 ```bash
-# Clone the repo
-git clone https://github.com/YOUR_USERNAME/Bravo_Transparency_Jobs.git
-cd Bravo_Transparency_Jobs
-
-# Copy env files and fill in your values
 cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env.local
-
-# Start all services — migrations run automatically on first boot
-docker compose up -d
-
-# Seed salary benchmark data (first time only)
-docker compose exec backend python -m app.scripts.seed
-
-# Verify the API is up
-curl http://localhost:8000/api/v1/jobs/
-# → {"total":0,"page":1,"page_size":20,"pages":0,"results":[]}
 ```
 
-API docs: `http://localhost:8000/docs`
-Frontend: `http://localhost:3000`
-
-> **Note:** Migrations run automatically when the backend container starts.
-> You do not need to run `alembic upgrade head` manually.
-
----
-
-### Activate scrapers
+When using Docker, Compose supplies the correct internal database and Redis hostnames. API keys can remain blank for disabled sources.
 
 ```bash
-# Dice and Simplify require no API key — start here
-docker compose exec worker celery -A app.workers.celery_app call joblens.scrape_source --args '["dice"]'
-docker compose exec worker celery -A app.workers.celery_app call joblens.scrape_source --args '["simplify"]'
-
-# Add RAPIDAPI_KEY to backend/.env to unlock Indeed, LinkedIn, Glassdoor, Monster
-# Then restart the worker to pick up the new key:
-docker compose restart worker beat
-
-# Add ZIPRECRUITER_API_KEY for ZipRecruiter (best salary data coverage)
-# Add JOBRIGHT_API_KEY after requesting access at jobright.ai
+docker compose down
+docker compose up -d --build
+docker compose ps
 ```
 
-Celery Beat runs staggered source schedules once keys are configured. Simplify runs daily; most other sources run every six hours. Per-source Redis locks prevent overlapping runs.
+Verify:
 
----
-
-## Database Schema
-
-| Table | Purpose |
-|-------|---------|
-| `companies` | Company master record with rating + hiring metrics |
-| `job_postings` | Posting observations, canonical grouping, listing classification, and transparency scores |
-| `job_snapshots` | Point-in-time history (applicants, salary, description per source) |
-| `job_events` | Audit log of all state changes (created, reposted, applicant_spike, etc.) |
-| `job_embeddings` | 384-dim sentence-transformer vectors (ivfflat indexed) |
-| `job_skills` | Normalized skills per posting |
-| `repost_events` | Verified repost occurrence log tied to a canonical job chain |
-| `job_source_sightings` | Every platform a job has been seen on |
-| `salary_benchmarks` | Market p25/p50/p75 by title + metro + seniority |
-
-### Ghost job probability formula
-
-```
-P(ghost) = 0.30 × repost_score
-         + 0.25 × days_active_score
-         + 0.15 × applicant_score
-         + 0.10 × salary_score
-         + 0.10 × company_rating_score
-         + 0.10 × historical_repost_score
+```bash
+curl http://localhost:8000/health
+docker compose exec backend alembic current
 ```
 
-All weights are configurable via environment variables.
+The migration head should be:
 
----
+```text
+0003_location_cache
+```
 
-## Deployment
+## Safe first scrape
 
-See `docs/deployment.md` for Railway + Vercel (recommended) and self-hosted VPS options.
+Stop automatic scheduling during manual testing:
 
----
+```bash
+docker compose stop beat
+docker compose exec worker celery -A app.workers.celery_app purge -f
+```
 
-## License
+Trigger Simplify once:
 
-MIT
+```bash
+docker compose exec worker celery -A app.workers.celery_app call \
+  joblens.scrape_source --args='["simplify"]'
+```
+
+Watch progress:
+
+```bash
+docker compose logs -f worker
+```
+
+Check database population:
+
+```bash
+docker compose exec postgres psql -U joblens -d joblens \
+  -c "SELECT source, COUNT(*) FROM job_postings GROUP BY source ORDER BY COUNT(*) DESC;"
+```
+
+## Determine hiring activity
+
+After collection completes, run identity classification and the first scoring batch:
+
+```bash
+docker compose exec worker celery -A app.workers.celery_app call \
+  joblens.analyze_hiring_activity --args='[1000]'
+```
+
+Continue scoring until the worker result reports `remaining_unscored: 0`:
+
+```bash
+docker compose exec worker celery -A app.workers.celery_app call \
+  joblens.score_all_jobs --args='[1000, false]'
+```
+
+A single scrape produces a preliminary score. Repeated daily sightings, snapshot changes, closures, and later reappearances make the history-based signals more informative.
+
+Inspect results:
+
+```bash
+docker compose exec postgres psql -U joblens -d joblens -c "
+SELECT title_raw, source, listing_classification,
+       ROUND(active_hiring_confidence::numeric, 1) AS hiring_confidence,
+       ROUND(ghost_job_probability::numeric, 3) AS ghost_probability,
+       days_active
+FROM job_postings
+WHERE active_hiring_confidence IS NOT NULL
+ORDER BY active_hiring_confidence DESC
+LIMIT 25;"
+```
+
+Open:
+
+- Frontend: `http://localhost:3000`
+- API documentation: `http://localhost:8000/docs`
+
+Restart scheduling after the manual test:
+
+```bash
+docker compose start beat
+```
+
+## Source configuration
+
+Only sources in `ENABLED_SCRAPER_SOURCES` are scheduled. The default is:
+
+```env
+ENABLED_SCRAPER_SOURCES=simplify
+```
+
+Other adapters require valid credentials and verified provider contracts. Add them individually after testing one source at a time.
+
+## Enrichment defaults
+
+These are disabled by default because they are expensive or externally rate-limited:
+
+```env
+GEOCODING_ENABLED=false
+DESCRIPTION_EMBEDDINGS_ENABLED=false
+SEMANTIC_TITLE_MATCHING_ENABLED=false
+IDENTITY_CANDIDATE_LIMIT=100
+```
+
+Geocoding operates on cached **unique locations**, not every job posting. Semantic title matching can be enabled later, but structured title fields and bounded lexical matching are the safe default for large collections.
+
+`AUTO_EXPIRE_STALE_JOBS=false` is also conservative during initial testing. After scheduled collection has run reliably for several days, enable it to let postings that have not been seen for the configured stale period become inactive.
+
+## Tests
+
+```bash
+cd backend
+pytest tests -q
+```
+
+```bash
+cd frontend
+npm ci
+npm run type-check
+npm run lint
+npm run build
+```
+
+See `docs/next_steps.md`, `docs/validation.md`, `docs/identity_resolution.md`, and `docs/scraper_reliability.md` for implementation details.

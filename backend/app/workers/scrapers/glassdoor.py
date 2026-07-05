@@ -1,21 +1,7 @@
-"""
-Glassdoor scraper adapter.
+"""Glassdoor-labelled listings via the configured JSearch/RapidAPI adapter.
 
-Integration options:
-
-OPTION A — RapidAPI Glassdoor API:
-  https://rapidapi.com/Pat92/api/glassdoor
-  Env vars: RAPIDAPI_KEY (same key as Indeed/LinkedIn)
-  Endpoint: https://glassdoor.p.rapidapi.com/jobs/search
-
-OPTION B — Glassdoor Partner API (requires partnership approval):
-  https://www.glassdoor.com/developer/
-  Provides company ratings, reviews, and salary data in addition to jobs.
-  Env vars: GLASSDOOR_PARTNER_ID, GLASSDOOR_PARTNER_KEY
-
-NOTE: Glassdoor's value-add over other sources is company ratings + salary data.
-Even if job scraping uses Option A, use Glassdoor's company rating endpoint
-to enrich the Company table with glassdoor_rating.
+No per-record geocoding occurs in this adapter. Enable only after validating the
+provider response fields and quota for your account.
 """
 
 import asyncio
@@ -25,7 +11,7 @@ import structlog
 
 from app.core.config import settings
 from app.services.normalizer import (
-    normalize_title, extract_seniority, geocode_location,
+    normalize_title, extract_seniority,
     extract_skills, build_job_identity_key, normalize_location_text,
 )
 from app.workers.scrapers.base import BaseScraperAdapter
@@ -75,8 +61,8 @@ class GlassdoorScraper(BaseScraperAdapter):
             location_raw = raw.get("location", raw.get("locationName", ""))
             title_normalized = normalize_title(title_raw)
             seniority = extract_seniority(title_raw)
-            geo = geocode_location(location_raw) if location_raw else None
-            metro = geo[2] if geo else normalize_location_text(location_raw)
+            geo = None
+            metro = normalize_location_text(location_raw)
             description = raw.get("jobDescription", raw.get("description", ""))
             skills = extract_skills(description)
             identity_key = build_job_identity_key(company_name, title_normalized, metro)

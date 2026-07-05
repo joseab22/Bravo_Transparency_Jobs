@@ -1,21 +1,7 @@
-"""
-Jobright scraper adapter.
+"""Jobright API adapter.
 
-Jobright is an AI-powered job aggregator with a curated feed.
-
-Integration options:
-
-OPTION A — Jobright API (requires account + API access request):
-  Contact Jobright at https://jobright.ai for API access.
-  They provide a structured JSON feed with pre-normalized titles and skills.
-  Env vars: JOBRIGHT_API_KEY, JOBRIGHT_API_BASE_URL
-
-OPTION B — RSS/JSON feed parsing:
-  Jobright publishes role-specific feeds. Parse with feedparser.
-  Env vars: JOBRIGHT_FEED_URL
-
-NOTE: Jobright already does some NLP normalization on job titles and skills.
-Their feed is a good signal-quality cross-check against our own normalizer.
+Requires explicit Jobright API access. Parsing is network-free; location
+enrichment is handled separately.
 """
 
 import asyncio
@@ -25,7 +11,7 @@ import structlog
 
 from app.core.config import settings
 from app.services.normalizer import (
-    normalize_title, extract_seniority, geocode_location,
+    normalize_title, extract_seniority,
     extract_skills, build_job_identity_key, normalize_location_text,
 )
 from app.workers.scrapers.base import BaseScraperAdapter
@@ -79,8 +65,8 @@ class JobrightScraper(BaseScraperAdapter):
             location_raw = raw.get("location", raw.get("locationString", ""))
             title_normalized = normalize_title(title_raw)
             seniority = extract_seniority(title_raw)
-            geo = geocode_location(location_raw) if location_raw else None
-            metro = geo[2] if geo else normalize_location_text(location_raw)
+            geo = None
+            metro = normalize_location_text(location_raw)
 
             # Jobright pre-extracts skills; use theirs if available, else extract
             raw_skills = raw.get("skills", [])

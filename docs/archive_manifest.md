@@ -1,19 +1,5 @@
 # Archive Manifest
 
-This archive combines the structured-identity implementation and the scraper-reliability patch.
+The distributable archive includes source code, three Alembic migrations, 36 backend tests, frontend lock files, Docker/CI configuration, and technical documentation including the audit report.
 
-Required files include:
-
-- `backend/migrations/versions/0002_structured_identity.py`
-- `backend/app/services/normalizer.py`
-- `backend/app/services/repost_detector.py`
-- `backend/app/services/scoring.py`
-- `backend/app/workers/ingestion.py`
-- `backend/app/workers/scrapers/base.py`
-- all eight scraper adapters
-- `backend/app/workers/celery_app.py`
-- `frontend/.eslintrc.json`
-- `docs/identity_resolution.md`
-- `docs/scraper_reliability.md`
-- `docs/validation.md`
-- `docs/github_change_summary.md`
+It excludes `.git`, `.env`, `node_modules`, `.next`, Python/test caches, local databases, editor files, and Celery Beat state.

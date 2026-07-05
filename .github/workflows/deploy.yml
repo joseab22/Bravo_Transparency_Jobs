@@ -1,34 +1,15 @@
-name: Deploy
+name: Deploy (manual)
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
-  deploy-backend:
+  deployment-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Deploy to Railway
-        # Option A: Railway (recommended for beginners)
-        # Install Railway CLI and deploy
+      - name: Explain deployment requirements
         run: |
-          npm install -g @railway/cli
-          railway up --service backend
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-
-  deploy-frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          working-directory: frontend
-          vercel-args: "--prod"
+          echo "Automatic deployment is intentionally disabled by default."
+          echo "Configure hosting secrets and replace this manual check with your approved deployment workflow."
+          echo "Run CI and database migrations before directing production traffic to a new release."

@@ -1,51 +1,39 @@
 # Scraper Reliability
 
-JobLens centralizes HTTP safety in `backend/app/workers/scrapers/base.py`.
+## Shared request controls
 
-## Shared request behavior
+Every HTTP adapter uses the common base client, which provides:
 
-Every HTTP-based adapter uses `request_json()` for:
-
-- HTTP `429` handling
-- `Retry-After` support
-- exponential backoff with random jitter
-- retries for temporary `408`, `425`, and `5xx` responses
-- retries for timeouts and transient network failures
-- courtesy delays between pages and queries
-
-Persistent rate limiting stops the current source cleanly rather than immediately requesting every remaining page.
+- one reusable client per scraper run;
+- `429` and `Retry-After` handling;
+- exponential backoff with jitter;
+- retries for temporary `5xx`, timeout, and network errors;
+- delays between result pages;
+- per-run deduplication and optional record caps.
 
 ## Duplicate-task prevention
 
-`joblens.scrape_source` obtains a Redis lock named for the source. Only one task per source can run at a time. Different sources may still run independently.
+Celery uses a Redis lock per source. A second task for the same source is skipped while the first lock is active. Worker prefetch is `1` and local concurrency defaults to `1`.
 
-Celery is configured with reduced prefetching and late acknowledgments. Local Docker testing uses worker concurrency `1` to minimize accidental overlap while the integrations are being validated.
+## Geocoding
 
-## Local verification
+Scraper parsers perform no geocoding. Collection stores normalized location text immediately. The optional `joblens.enrich_locations` task:
 
-```bash
-docker compose stop beat
-docker compose exec worker celery -A app.workers.celery_app purge -f
-docker compose up -d --build backend worker
+1. selects unique uncached location strings;
+2. skips remote and multi-location labels;
+3. checks `location_cache`;
+4. makes rate-limited requests only for missing locations;
+5. updates all jobs sharing the same raw location;
+6. invalidates affected scores so they can be recalculated.
 
-docker compose exec worker celery -A app.workers.celery_app inspect active
-docker compose exec worker celery -A app.workers.celery_app inspect reserved
-```
+Nominatim and Google are supported through `GEOCODING_PROVIDER`. Google requires `GOOGLE_GEOCODING_API_KEY`. `GEOCODING_ENABLED=false` is the safe default.
 
-Trigger one source once:
+## Large feeds
 
-```bash
-docker compose exec worker celery -A app.workers.celery_app call \
-  joblens.scrape_source --args='["simplify"]'
-```
+Before row processing, ingestion normalizes records, resolves each unique company once, and prefetches existing stable IDs and URLs in chunks. It then commits in configurable batches and only writes a new snapshot when mutable data changed or the snapshot interval elapsed.
 
-Inspect results:
+This allows a large feed to make durable progress without performing model downloads or geocoding in the insert loop.
 
-```bash
-docker compose logs -f worker
+## Source completeness
 
-docker compose exec postgres psql -U joblens -d joblens \
-  -c "SELECT source, COUNT(*) FROM job_postings GROUP BY source;"
-```
-
-A backoff policy respects an upstream limit; it does not bypass provider quotas or access restrictions.
+A source task may ingest partial results after an upstream rate limit. For that reason, a single failed or partial run does not immediately mark absent listings inactive. The optional stale-job task uses a conservative time window and is disabled by default during initial testing.

@@ -1,163 +1,161 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_, desc, asc
-from sqlalchemy.orm import selectinload
-from typing import Optional
+from __future__ import annotations
+
 import math
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import asc, desc, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.db.session import get_db
-from app.models.models import JobPosting, Company
-from app.schemas.jobs import (
-    JobPostingListItem, JobPostingDetail,
-    PaginatedJobsResponse, MarketStats,
-)
+from app.models.models import Company, JobPosting, JobSkill
+from app.schemas.jobs import JobPostingDetail, MarketStats, PaginatedJobsResponse
 from app.services.scoring import ScoringService
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
-
 SORT_COLS = {
-    "health_score", "ghost_job_probability", "days_active",
-    "salary_max", "applicant_count", "date_first_seen",
+    "active_hiring_confidence", "health_score", "ghost_job_probability",
+    "days_active", "salary_max", "applicant_count", "date_first_seen",
     "activity_score", "competition_score",
 }
-
-# Eager-load options for list view (avoids async lazy-load MissingGreenlet errors)
 LIST_OPTIONS = [
     selectinload(JobPosting.company),
     selectinload(JobPosting.skills),
     selectinload(JobPosting.source_sightings),
 ]
-
-# Eager-load options for detail view (loads everything)
-DETAIL_OPTIONS = LIST_OPTIONS + [
-    selectinload(JobPosting.repost_events),
-    selectinload(JobPosting.events),
-]
+DETAIL_OPTIONS = LIST_OPTIONS + [selectinload(JobPosting.repost_events), selectinload(JobPosting.events)]
 
 
-def _build_query(
-    q=None, industry=None, remote_type=None, seniority=None,
-    employment_type=None, metro_area=None, salary_min=None, salary_max=None,
-    ghost_max=None, health_min=None, sort_by="health_score", sort_dir="desc",
+def _filters(
+    q=None, industry=None, job_family=None, classification=None, remote_type=None,
+    seniority=None, employment_type=None, metro_area=None, salary_min=None,
+    salary_max=None, ghost_max=None, health_min=None, active_hiring_min=None,
 ):
-    query = (
-        select(JobPosting)
-        .options(*LIST_OPTIONS)
-        .where(JobPosting.is_active == True)
-    )
+    values = [JobPosting.is_active.is_(True)]
     if q:
-        ql = f"%{q.lower()}%"
-        query = query.join(JobPosting.company).where(or_(
-            JobPosting.title_normalized.ilike(ql),
-            Company.name.ilike(ql),
-        ))
+        term = f"%{q}%"
+        values.append(or_(JobPosting.title_raw.ilike(term), JobPosting.title_normalized.ilike(term), Company.name.ilike(term)))
     if industry:
-        query = query.where(JobPosting.industry == industry)
+        values.append(JobPosting.industry == industry)
+    if job_family:
+        values.append(JobPosting.job_family == job_family)
+    if classification:
+        values.append(JobPosting.listing_classification == classification)
     if remote_type:
-        query = query.where(JobPosting.remote_type == remote_type)
+        values.append(JobPosting.remote_type == remote_type)
     if seniority:
-        query = query.where(JobPosting.seniority == seniority)
+        values.append(JobPosting.seniority == seniority)
     if employment_type:
-        query = query.where(JobPosting.employment_type == employment_type)
+        values.append(JobPosting.employment_type == employment_type)
     if metro_area:
-        query = query.where(JobPosting.metro_area.ilike(f"%{metro_area}%"))
-    if salary_min:
-        query = query.where(JobPosting.salary_max >= salary_min)
-    if salary_max:
-        query = query.where(JobPosting.salary_min <= salary_max)
+        values.append(JobPosting.metro_area.ilike(f"%{metro_area}%"))
+    if salary_min is not None:
+        values.append(JobPosting.salary_max >= salary_min)
+    if salary_max is not None:
+        values.append(JobPosting.salary_min <= salary_max)
     if ghost_max is not None:
-        query = query.where(JobPosting.ghost_job_probability <= ghost_max)
+        values.append(JobPosting.ghost_job_probability <= ghost_max)
     if health_min is not None:
-        query = query.where(JobPosting.health_score >= health_min)
-
-    col_name = sort_by if sort_by in SORT_COLS else "health_score"
-    col = getattr(JobPosting, col_name, JobPosting.health_score)
-    query = query.order_by(asc(col) if sort_dir == "asc" else desc(col))
-    return query
+        values.append(JobPosting.health_score >= health_min)
+    if active_hiring_min is not None:
+        values.append(JobPosting.active_hiring_confidence >= active_hiring_min)
+    return values
 
 
 @router.get("/", response_model=PaginatedJobsResponse)
 async def list_jobs(
     q: Optional[str] = None,
     industry: Optional[str] = None,
+    job_family: Optional[str] = None,
+    classification: Optional[str] = None,
     remote_type: Optional[str] = None,
     seniority: Optional[str] = None,
     employment_type: Optional[str] = None,
     metro_area: Optional[str] = None,
     salary_min: Optional[int] = None,
     salary_max: Optional[int] = None,
-    ghost_max: Optional[float] = None,
-    health_min: Optional[float] = None,
-    sort_by: str = "health_score",
+    ghost_max: Optional[float] = Query(None, ge=0, le=1),
+    health_min: Optional[float] = Query(None, ge=0, le=100),
+    active_hiring_min: Optional[float] = Query(None, ge=0, le=100),
+    sort_by: str = "active_hiring_confidence",
     sort_dir: str = "desc",
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    query = _build_query(
-        q=q, industry=industry, remote_type=remote_type, seniority=seniority,
-        employment_type=employment_type, metro_area=metro_area,
-        salary_min=salary_min, salary_max=salary_max,
-        ghost_max=ghost_max, health_min=health_min,
-        sort_by=sort_by, sort_dir=sort_dir,
+    conditions = _filters(
+        q, industry, job_family, classification, remote_type, seniority,
+        employment_type, metro_area, salary_min, salary_max, ghost_max,
+        health_min, active_hiring_min,
     )
-    # Count without options (faster)
-    count_q = select(func.count()).select_from(
-        select(JobPosting).where(JobPosting.is_active == True).subquery()
-    )
-    total = (await db.execute(count_q)).scalar_one()
-    jobs_result = await db.execute(query.offset((page - 1) * page_size).limit(page_size))
-    jobs = jobs_result.scalars().unique().all()
+    base = select(JobPosting).join(Company).where(*conditions)
+    total = await db.scalar(select(func.count()).select_from(base.with_only_columns(JobPosting.id).order_by(None).subquery())) or 0
+    column = getattr(JobPosting, sort_by if sort_by in SORT_COLS else "active_hiring_confidence")
+    order = asc(column).nulls_last() if sort_dir == "asc" else desc(column).nulls_last()
+    jobs = list((await db.execute(
+        base.options(*LIST_OPTIONS).order_by(order, JobPosting.id.desc())
+        .offset((page - 1) * page_size).limit(page_size)
+    )).scalars().unique())
     return PaginatedJobsResponse(
         total=total, page=page, page_size=page_size,
-        pages=math.ceil(total / page_size) if total else 0,
-        results=jobs,
+        pages=math.ceil(total / page_size) if total else 0, results=jobs,
     )
 
 
 @router.get("/stats", response_model=MarketStats)
 async def market_stats(db: AsyncSession = Depends(get_db)):
-    active = JobPosting.is_active == True
-    total = (await db.execute(select(func.count(JobPosting.id)).where(active))).scalar_one()
-    avg_ghost = (await db.execute(select(func.avg(JobPosting.ghost_job_probability)).where(active))).scalar_one() or 0
-    avg_health = (await db.execute(select(func.avg(JobPosting.health_score)).where(active))).scalar_one() or 0
-    high_ghost = (await db.execute(select(func.count(JobPosting.id)).where(
-        and_(active, JobPosting.ghost_job_probability >= 0.60)))).scalar_one()
-    avg_days = (await db.execute(select(func.avg(JobPosting.days_active)).where(active))).scalar_one() or 0
-    total_apps = (await db.execute(select(func.sum(JobPosting.applicant_count)).where(active))).scalar_one() or 0
+    active = JobPosting.is_active.is_(True)
+    total = await db.scalar(select(func.count(JobPosting.id)).where(active)) or 0
+    scored = await db.scalar(select(func.count(JobPosting.id)).where(active, JobPosting.active_hiring_confidence.is_not(None))) or 0
+    async def avg(column):
+        value = await db.scalar(select(func.avg(column)).where(active))
+        return float(value or 0)
+    high_ghost = await db.scalar(select(func.count(JobPosting.id)).where(active, JobPosting.ghost_job_probability >= 0.60)) or 0
+    total_apps = await db.scalar(select(func.sum(JobPosting.applicant_count)).where(active)) or 0
+    classification_rows = (await db.execute(
+        select(JobPosting.listing_classification, func.count(JobPosting.id)).where(active)
+        .group_by(JobPosting.listing_classification).order_by(func.count(JobPosting.id).desc())
+    )).all()
+    industry_rows = (await db.execute(
+        select(JobPosting.industry, func.count(JobPosting.id)).where(active, JobPosting.industry.is_not(None))
+        .group_by(JobPosting.industry).order_by(func.count(JobPosting.id).desc()).limit(10)
+    )).all()
+    skill_rows = (await db.execute(
+        select(JobSkill.skill, func.count(JobSkill.id)).join(JobPosting).where(active)
+        .group_by(JobSkill.skill).order_by(func.count(JobSkill.id).desc()).limit(10)
+    )).all()
     return MarketStats(
         total_active_jobs=total,
-        avg_ghost_probability=round(float(avg_ghost), 3),
-        avg_health_score=round(float(avg_health), 1),
+        scored_active_jobs=scored,
+        avg_active_hiring_confidence=round(await avg(JobPosting.active_hiring_confidence), 1),
+        avg_ghost_probability=round(await avg(JobPosting.ghost_job_probability), 3),
+        avg_health_score=round(await avg(JobPosting.health_score), 1),
         high_ghost_risk_count=high_ghost,
-        top_industries=[], top_skills=[],
-        avg_days_active=round(float(avg_days), 1),
+        classification_counts=[{"classification": key, "count": count} for key, count in classification_rows],
+        top_industries=[{"industry": key, "count": count} for key, count in industry_rows],
+        top_skills=[{"skill": key, "count": count} for key, count in skill_rows],
+        avg_days_active=round(await avg(JobPosting.days_active), 1),
         total_applicants=int(total_apps),
     )
 
 
 @router.get("/{job_id}", response_model=JobPostingDetail)
 async def get_job(job_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(JobPosting)
-        .options(*DETAIL_OPTIONS)
-        .where(JobPosting.id == job_id)
-    )
-    job = result.scalar_one_or_none()
+    job = (await db.execute(select(JobPosting).options(*DETAIL_OPTIONS).where(JobPosting.id == job_id))).scalar_one_or_none()
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(404, "Job not found")
     return job
 
 
 @router.post("/{job_id}/score")
 async def trigger_score(job_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(JobPosting).options(*LIST_OPTIONS).where(JobPosting.id == job_id)
-    )
-    job = result.scalar_one_or_none()
+    job = (await db.execute(
+        select(JobPosting).options(selectinload(JobPosting.company), selectinload(JobPosting.snapshots), selectinload(JobPosting.embedding))
+        .where(JobPosting.id == job_id)
+    )).scalar_one_or_none()
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    scorer = ScoringService()
-    scores = await scorer.score_job(job, db)
+        raise HTTPException(404, "Job not found")
+    scores = await ScoringService().score_job(job, db)
     await db.commit()
     return {"job_id": job_id, "scores": scores}

@@ -1,186 +1,82 @@
-"""
-Simplify scraper adapter.
+"""Simplify public-feed adapter for current early-career technology roles."""
+from __future__ import annotations
 
-Simplify (simplify.jobs) aggregates and normalizes job postings,
-with a focus on early-career and new-grad roles.
-
-Integration options:
-
-OPTION A — Simplify Public Jobs Feed (JSON):
-  Simplify maintains public GitHub repos with job data:
-  https://github.com/SimplifyJobs/Summer2024-Internships
-  https://github.com/SimplifyJobs/New-Grad-Positions
-  These are JSON files updated regularly via GitHub Actions.
-  No API key required. Parse via raw GitHub content URLs.
-  Env vars: none required
-
-OPTION B — Simplify API (if/when they open a public API):
-  Env vars: SIMPLIFY_API_KEY, SIMPLIFY_API_BASE_URL
-
-NOTE: Start with Option A — their public GitHub repos are high quality,
-well-normalized, and update daily. Excellent source for entry-level roles.
-"""
-
-import asyncio
-from datetime import datetime
+import re
 from typing import Optional
+
 import structlog
 
 from app.core.config import settings
-from app.services.normalizer import (
-    normalize_title, extract_seniority, geocode_location,
-    extract_skills, build_job_identity_key, normalize_location_text,
-)
-from app.workers.scrapers.base import (
-    BaseScraperAdapter,
-    ScraperRateLimitError,
-)
+from app.services.normalizer import extract_skills, normalize_employment_type, parse_datetime
+from app.workers.scrapers.base import BaseScraperAdapter
 
 log = structlog.get_logger()
-
-# Simplify public GitHub JSON feeds
-SIMPLIFY_FEEDS = {
-    "new_grad": "https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/.github/scripts/listings.json",
-    "internships": "https://raw.githubusercontent.com/SimplifyJobs/Summer2025-Internships/dev/.github/scripts/listings.json",
-}
 
 
 class SimplifyScraper(BaseScraperAdapter):
     source_name = "simplify"
 
-    def __init__(self, max_pages: int = None):
-        super().__init__(max_pages or 1)  # GitHub feeds are single-page
-        self.api_key = getattr(settings, "simplify_api_key", "")
-        self.use_github_feeds = not bool(self.api_key)
+    def __init__(self, max_pages: int | None = None):
+        super().__init__(max_pages=1, max_records=settings.simplify_max_records)
+        self.feeds = {
+            "new_grad": settings.simplify_new_grad_feed_url,
+            "internships": settings.simplify_internship_feed_url,
+        }
 
     async def fetch_jobs(self, query: str, page: int = 1) -> list:
-        """For GitHub feed mode, query is ignored — we pull all and filter."""
-        if self.use_github_feeds:
-            return await self._fetch_github_feed()
-        return await self._fetch_api(query, page)
+        data = await self.request_json(self.feeds[query], headers={"Accept": "application/json"})
+        log.info("simplify_feed_fetched", feed=query, count=len(data) if isinstance(data, list) else 0)
+        return data if isinstance(data, list) else []
 
-    async def _fetch_github_feed(self) -> list:
-        all_jobs: list[dict] = []
-
-        for index, (feed_name, url) in enumerate(SIMPLIFY_FEEDS.items()):
-            try:
-                data = await self.request_json(
-                    url,
-                    headers={
-                        "Accept": "application/vnd.github.raw+json,application/json",
-                    },
-                )
-
-                if isinstance(data, list):
-                    all_jobs.extend(data)
-
-                log.info(
-                    "simplify_feed_fetched",
-                    feed=feed_name,
-                    count=len(data) if isinstance(data, list) else 0,
-                )
-
-                if index < len(SIMPLIFY_FEEDS) - 1:
-                    await asyncio.sleep(3.0)
-
-            except ScraperRateLimitError:
-                raise
-            except Exception as exc:
-                log.error(
-                    "simplify_feed_error",
-                    feed=feed_name,
-                    error=str(exc),
-                )
-
-        return all_jobs
-
-    async def _fetch_api(self, query: str, page: int) -> list:
-        # Future: implement Simplify API when available
-        log.warning("simplify_api_not_implemented", hint="Use SIMPLIFY_API_KEY once Simplify opens public API access.")
-        return []
-
-    def extract_job_list(self, raw_response) -> list:
-        if isinstance(raw_response, list):
-            return raw_response
-        return []
-
-    async def scrape(self, queries: list[str] = None) -> list[dict]:
-        """Override: GitHub feed is a single pull, no per-query pagination."""
-        if self.use_github_feeds:
-            raw_jobs = await self._fetch_github_feed()
-            results = []
-            for raw in raw_jobs:
-                parsed = self.parse_job(raw)
-                if parsed:
-                    results.append(parsed)
-            log.info("simplify_scrape_complete", total=len(results))
-            return results
-        return await super().scrape(queries)
+    async def scrape(self, queries: Optional[list[str]] = None) -> list[dict]:
+        return await super().scrape(list(self.feeds))
 
     def parse_job(self, raw: dict) -> Optional[dict]:
-        try:
-            title_raw = raw.get("title", raw.get("role", ""))
-            company_name = raw.get("company_name", raw.get("company", ""))
-            if not title_raw or not company_name:
-                return None
-
-            # Simplify stores locations as a list
-            locations = raw.get("locations", raw.get("location", []))
-            if isinstance(locations, list) and locations:
-                location_raw = locations[0]
-            elif isinstance(locations, str):
-                location_raw = locations
-            else:
-                location_raw = ""
-
-            title_normalized = normalize_title(title_raw)
-            seniority = extract_seniority(title_raw)
-            geo = geocode_location(location_raw) if location_raw else None
-            metro = geo[2] if geo else normalize_location_text(location_raw)
-
-            is_remote = "remote" in location_raw.lower() if location_raw else False
-            description = raw.get("description", "")
-            skills = extract_skills(description)
-            identity_key = build_job_identity_key(company_name, title_normalized, metro)
-
-            date_str = raw.get("date_posted") or raw.get("date_updated")
-            date_posted = None
-            if date_str:
-                try:
-                    date_posted = datetime.fromisoformat(str(date_str))
-                except Exception:
-                    pass
-
-            return {
-                "source": self.source_name,
-                "external_id": str(raw.get("id", raw.get("url", ""))),
-                "source_url": raw.get("url") or raw.get("apply_url"),
-                "company_name": company_name,
-                "title_raw": title_raw,
-                "title_normalized": title_normalized,
-                "seniority": seniority,
-                "location_raw": location_raw,
-                "city": None,
-                "state": None,
-                "country": "US",
-                "metro_area": metro,
-                "latitude": geo[0] if geo else None,
-                "longitude": geo[1] if geo else None,
-                "remote_type": "Remote" if is_remote else "Onsite",
-                "salary_min": None,
-                "salary_max": None,
-                "salary_listed": False,
-                "employment_type": "Full-time" if "internship" not in title_raw.lower() else "Internship",
-                "description_raw": description,
-                "skills": skills,
-                "date_posted": date_posted,
-                "job_identity_key": identity_key,
-            }
-        except Exception as e:
-            log.error("simplify_parse_error", error=str(e))
+        closed = str(raw.get("is_closed", "false")).lower() in {"true", "1", "yes"}
+        inactive = str(raw.get("active", "true")).lower() in {"false", "0", "no"}
+        if closed or inactive:
+            return None
+        title = raw.get("title") or raw.get("role") or ""
+        company = raw.get("company_name") or raw.get("company") or ""
+        if isinstance(company, dict):
+            company = company.get("name", "")
+        if not title or not company:
             return None
 
+        raw_locations = raw.get("locations") or raw.get("location") or []
+        if isinstance(raw_locations, str):
+            locations = [raw_locations]
+        elif isinstance(raw_locations, list):
+            locations = [str(item.get("location") or item.get("name") or item) if isinstance(item, dict) else str(item) for item in raw_locations]
+        else:
+            locations = []
+        location = " | ".join(dict.fromkeys(value.strip() for value in locations if value and value.strip())) or None
 
-async def scrape_simplify(max_pages: int = None) -> list[dict]:
-    scraper = SimplifyScraper(max_pages)
-    return await scraper.scrape()
+        description = raw.get("description") or raw.get("description_text") or ""
+        external_id = raw.get("id") or raw.get("job_id") or raw.get("slug")
+        source_url = raw.get("url") or raw.get("application_url") or raw.get("link")
+        date_posted = parse_datetime(raw.get("date_posted") or raw.get("date") or raw.get("created_at"))
+        employment = normalize_employment_type(raw.get("type"), title)
+        salary_text = str(raw.get("salary") or "")
+        salary_values = [int(x.replace(",", "")) for x in re.findall(r"\$?([0-9]{2,3}(?:,[0-9]{3})?)", salary_text)]
+
+        return {
+            "source": self.source_name,
+            "external_id": str(external_id) if external_id not in (None, "") else None,
+            "source_url": source_url,
+            "company_name": str(company),
+            "title_raw": title,
+            "location_raw": location,
+            "remote_type": "Remote" if any("remote" in value.lower() for value in locations) else raw.get("remote_type"),
+            "employment_type": employment,
+            "salary_min": min(salary_values) if salary_values else None,
+            "salary_max": max(salary_values) if salary_values else None,
+            "salary_period": "year",
+            "description_raw": description,
+            "skills": extract_skills(description),
+            "date_posted": date_posted,
+        }
+
+
+async def scrape_simplify(max_pages: int | None = None) -> list[dict]:
+    return await SimplifyScraper(max_pages).scrape()

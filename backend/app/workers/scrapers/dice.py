@@ -1,18 +1,7 @@
-"""
-Dice scraper adapter.
+"""Dice job-source adapter.
 
-Dice specializes in tech jobs and has a public REST API.
-
-OPTION A — Dice Jobs API (recommended, no key required for basic search):
-  https://job-search-api.svc.dhigroupinc.com/v1/dice/jobs/search
-  No auth required for basic job search. Higher rate limits with API key.
-  Env vars: DICE_API_KEY (optional)
-
-OPTION B — RapidAPI Dice endpoint:
-  Env vars: RAPIDAPI_KEY
-
-Dice returns clean JSON with skills, employment type, posted date, and
-work setting (remote/onsite/hybrid) — well-structured for our pipeline.
+The endpoint contract may require a provider key. Parsing is network-free;
+location enrichment is handled separately.
 """
 
 import asyncio
@@ -22,7 +11,7 @@ import structlog
 
 from app.core.config import settings
 from app.services.normalizer import (
-    normalize_title, extract_seniority, geocode_location,
+    normalize_title, extract_seniority,
     extract_skills, build_job_identity_key, normalize_location_text,
 )
 from app.workers.scrapers.base import BaseScraperAdapter
@@ -76,8 +65,8 @@ class DiceScraper(BaseScraperAdapter):
             location_raw = raw.get("location", "")
             title_normalized = normalize_title(title_raw)
             seniority = extract_seniority(title_raw)
-            geo = geocode_location(location_raw) if location_raw else None
-            metro = geo[2] if geo else normalize_location_text(location_raw)
+            geo = None
+            metro = normalize_location_text(location_raw)
 
             workplace = raw.get("workplaceTypes", [])
             if isinstance(workplace, list):
