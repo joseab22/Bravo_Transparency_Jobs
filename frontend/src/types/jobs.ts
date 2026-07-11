@@ -11,9 +11,25 @@ export interface Skill {
   skill_category?: string | null;
 }
 
+export interface CanonicalSource {
+  sighting_key: string;
+  source: string;
+  publisher_name: string;
+  collection_provider?: string | null;
+  source_url?: string | null;
+  external_id?: string | null;
+  is_direct: boolean;
+  first_seen: string;
+  last_seen: string;
+  is_active: boolean;
+  listing_ids: number[];
+}
+
 export interface JobListItem {
   id: number;
   source: string;
+  publisher_name?: string | null;
+  collection_provider?: string | null;
   source_url?: string | null;
   title_raw: string;
   title_normalized: string;
@@ -40,6 +56,7 @@ export interface JobListItem {
   ghost_job_probability?: number | null;
   health_score?: number | null;
   activity_score?: number | null;
+  canonical_sources: CanonicalSource[];
   skills: Skill[];
 }
 
@@ -58,6 +75,7 @@ export interface JobFilters {
   job_family?: string;
   classification?: string;
   active_hiring_min?: number;
+  collapse_canonical?: boolean;
   sort_by?: string;
   sort_dir?: "asc" | "desc";
 }

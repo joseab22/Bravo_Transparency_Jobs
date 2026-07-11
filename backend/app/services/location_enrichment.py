@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.time import utc_now
 from app.models.models import JobPosting, LocationCache
-from app.services.normalizer import normalize_location_text
+from app.services.normalizer import normalize_location_text, normalize_metro_area
 
 log = structlog.get_logger()
 
@@ -138,10 +138,12 @@ async def enrich_locations(db: AsyncSession, limit: int | None = None) -> dict:
                 cached.status = "success"
                 cached.latitude = float(location.latitude)
                 cached.longitude = float(location.longitude)
-                cached.city = city
-                cached.state = state
-                cached.country = country or "US"
-                cached.metro_area = ", ".join(x for x in (city, state) if x) or raw
+                cached.city = (city or "")[:200] or None
+                cached.state = (state or "")[:100] or None
+                cached.country = (country or "US")[:100]
+                cached.metro_area = normalize_metro_area(
+                    ", ".join(x for x in (cached.city, cached.state) if x) or raw
+                )
                 cached.last_error = None
             except Exception as exc:
                 cached.status = "failed"

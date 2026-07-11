@@ -1,53 +1,116 @@
 # JobLens — Job Market Transparency
 
-JobLens collects technology job postings over time and estimates **Active Hiring Confidence** from observable signals such as posting recency, repeated sightings, parallel openings, repost history, compensation disclosure, applicants, and company behavior.
+JobLens collects technology job postings over time and estimates **Active Hiring Confidence** from observable signals such as recency, repeated sightings, parallel advertisements, repost history, compensation disclosure, applicants, and company behavior.
 
-The score is an estimate of posting activity—not proof of employer intent.
+The score estimates posting activity. It is not proof of employer intent.
 
-## What changed in this audited release
+## Current behavior
 
-- Centralized tech-title decomposition into job family, seniority, and specialization.
-- Preserves separate source listings instead of collapsing simultaneous openings.
-- Classifies listings as `original`, `parallel`, or `repost` after collection.
-- Handles remote and multi-location advertisements independently from repost detection.
-- Removes per-job geocoding from all scraper parsers.
-- Adds cached, opt-in geocoding for unique locations.
-- Adds shared HTTP retries, `Retry-After`, exponential backoff, jitter, and source locks.
-- Prefetches stable IDs and companies, commits large feeds in batches, and throttles unchanged snapshots.
-- Keeps semantic title matching and description embeddings opt-in so analysis does not download a model unexpectedly.
-- Moves embeddings and scoring into deliberate background analysis tasks.
-- Aligns ORM models, API schemas, frontend types, Alembic migrations, tests, and documentation.
+- Collects Simplify directly from its public feeds. Simplify never consumes JSearch requests.
+- Uses one generic JSearch collection pass to retrieve mixed publishers instead of spending separate requests on LinkedIn, Indeed, ZipRecruiter, Glassdoor, and other targeted searches.
+- Adds `-site:simplify.jobs` to JSearch queries and removes any Simplify publisher/apply options returned by the provider.
+- Stores `collection_provider=jsearch` separately from the actual publisher in `source`.
+- Preserves `job_publisher`, every distinct `apply_options` publisher/link, and direct-company application URLs.
+- Updates repeated copies of the same JSearch `job_id` instead of inserting duplicate posting rows.
+- Keeps different source IDs separate until identity analysis classifies them as `original`, `parallel`, or `repost` and assigns a shared `canonical_job_id` when appropriate.
+- Returns one representative card per canonical opening by default and exposes every known board/application URL in `canonical_sources`.
+- Displays linked **Found on** chips in the frontend. Multiple links from one publisher remain accessible and are numbered; direct employer links are marked **Direct**.
+- Enforces a Redis-backed monthly JSearch request budget before every request attempt, including retries.
+- Uses RapidAPI quota-response headers as a second guard and persists counters through Redis AOF storage.
+- Removes per-posting geocoding and model generation from collection. Optional enrichment runs separately.
 
-## Architecture
+## Pipeline
 
 ```text
-Job source
-  → rate-limited scraper
-  → pure normalization
+Simplify public feeds ─────────────────────────────────────────┐
+                                                               ├─→ normalization
+JSearch /search-v2 → publisher + apply-link attribution ───────┘
   → batched PostgreSQL ingestion
-  → optional cached location/embedding enrichment
-  → identity-history classification
+  → optional cached enrichment
+  → canonical identity/history analysis
   → Active Hiring Confidence scoring
   → FastAPI / Next.js
 ```
 
+## Exact JSearch API-key location
+
+For your Mac repository, put the **rotated RapidAPI key** in exactly:
+
+```text
+/Users/josebravo/Desktop/Bravo_Transparency_Jobs/backend/.env
+```
+
+Or, from the repository root:
+
+```text
+backend/.env
+```
+
+Open it with TextEdit:
+
+```bash
+open -e ~/Desktop/Bravo_Transparency_Jobs/backend/.env
+```
+
+Add or replace this line:
+
+```env
+RAPIDAPI_KEY=your_rotated_private_key_here
+```
+
+Do not add quotes or spaces. Do not place the key in `.env.example`, `docker-compose.yml`, source code, screenshots, commits, or GitHub.
+
+Recommended JSearch Pro settings in the same `backend/.env` file:
+
+```env
+ENABLED_SCRAPER_SOURCES=simplify,jsearch
+RAPIDAPI_KEY=your_rotated_private_key_here
+
+JSEARCH_PAGES_PER_QUERY=10
+JSEARCH_SCHEDULE_EVERY_HOURS=24
+JSEARCH_MONTHLY_REQUEST_LIMIT=10000
+JSEARCH_REQUEST_RESERVE=1000
+JSEARCH_QUERIES=software engineer,data analyst,data engineer,data scientist,machine learning engineer,product manager,security engineer
+JSEARCH_COUNTRY=us
+JSEARCH_LANGUAGE=en
+JSEARCH_LOCATION=United States
+JSEARCH_DATE_POSTED=month
+JSEARCH_EXCLUDED_PUBLISHERS=simplify,simplifyjobs,simplify jobs
+JSEARCH_EXCLUDED_DOMAINS=simplify.jobs
+ALLOW_OVERLAPPING_JSEARCH_SOURCES=false
+```
+
+Use a dedicated RapidAPI application/key for JobLens and do not use that key for unrelated manual requests. Requests made outside JobLens still count against the same provider quota.
+
+## JSearch Pro request protection
+
+Default schedule mathematics:
+
+```text
+7 role queries × 10 cursor pages × 1 run/day × 31 days
+= 2,170 planned requests in a 31-day month
+```
+
+The code also applies these protections:
+
+1. Every JSearch HTTP attempt reserves one unit in Redis before it is sent. Retries count.
+2. JobLens stops at `10,000 - 1,000 = 9,000` locally counted attempts.
+3. RapidAPI's `x-ratelimit-requests-*` headers are saved and collection stops when provider-reported remaining requests reach the 1,000-request reserve.
+4. Configuration validation prevents a scheduled generic JSearch plan whose estimated usage exceeds the protected application budget.
+5. Generic `jsearch` cannot be scheduled together with targeted `linkedin` or `indeed` unless overlap is explicitly enabled.
+6. All JSearch-backed adapters share one provider lock, preventing concurrent generic/targeted runs.
+7. Redis uses append-only persistence so an ordinary container restart does not discard the counter.
+
+With the default daily schedule and roughly ten returned rows per page, the theoretical ceiling is about **21,700 returned rows/month**. It is not a guarantee of 21,700 unique jobs: short pages, repeated daily sightings, overlapping role queries, and the same opening appearing on several boards reduce the unique count.
+
 ## Quick start
 
 ```bash
-cp backend/.env.example backend/.env
-```
+cd ~/Desktop/Bravo_Transparency_Jobs
 
-When using Docker, Compose supplies the correct internal database and Redis hostnames. API keys can remain blank for disabled sources.
-
-```bash
-docker compose down
+test -f backend/.env || cp backend/.env.example backend/.env
 docker compose up -d --build
 docker compose ps
-```
-
-Verify:
-
-```bash
 curl http://localhost:8000/health
 docker compose exec backend alembic current
 ```
@@ -55,111 +118,134 @@ docker compose exec backend alembic current
 The migration head should be:
 
 ```text
-0003_location_cache
+0006_source_sighting_links
 ```
 
-## Safe first scrape
+The backend runs `alembic upgrade head` automatically before FastAPI starts. `alembic current` only verifies the installed revision.
 
-Stop automatic scheduling during manual testing:
+Verify the worker received the key without printing it:
+
+```bash
+docker compose exec worker sh -c \
+  'test -n "$RAPIDAPI_KEY" && echo "RAPIDAPI_KEY is set" || echo "RAPIDAPI_KEY is missing"'
+```
+
+## Controlled first JSearch test
+
+Keep Beat stopped and use only one page per query. This spends at most about seven requests plus any retries:
 
 ```bash
 docker compose stop beat
-docker compose exec worker celery -A app.workers.celery_app purge -f
-```
 
-Trigger Simplify once:
+docker compose exec worker celery -A app.workers.celery_app inspect active
 
-```bash
 docker compose exec worker celery -A app.workers.celery_app call \
-  joblens.scrape_source --args='["simplify"]'
-```
+  joblens.scrape_source --args='["jsearch",1]'
 
-Watch progress:
-
-```bash
 docker compose logs -f worker
 ```
 
-Check database population:
+Look for:
+
+```text
+scraper_complete
+jsearch_quota_status
+ingest_progress
+task_complete
+```
+
+Run a full configured collection after the test succeeds:
 
 ```bash
-docker compose exec postgres psql -U joblens -d joblens \
-  -c "SELECT source, COUNT(*) FROM job_postings GROUP BY source ORDER BY COUNT(*) DESC;"
+docker compose exec worker celery -A app.workers.celery_app call \
+  joblens.scrape_source --args='["jsearch"]'
+```
+
+Check the protected quota at any time:
+
+```bash
+docker compose exec worker python -m app.scripts.jsearch_quota
+```
+
+## Source attribution
+
+Inspect primary posting publishers:
+
+```bash
+docker compose exec postgres psql -U joblens -d joblens -c "
+SELECT collection_provider, source, COUNT(*)
+FROM job_postings
+GROUP BY collection_provider, source
+ORDER BY COUNT(*) DESC;"
+```
+
+Inspect every application link:
+
+```bash
+docker compose exec postgres psql -U joblens -d joblens -c "
+SELECT source, publisher_name, is_direct, COUNT(*)
+FROM job_source_sightings
+GROUP BY source, publisher_name, is_direct
+ORDER BY COUNT(*) DESC;"
+```
+
+The jobs endpoint collapses canonical duplicates by default:
+
+```text
+GET /api/v1/jobs/?collapse_canonical=true
+```
+
+Each result includes every known board/link:
+
+```json
+{
+  "source": "linkedin",
+  "collection_provider": "jsearch",
+  "canonical_sources": [
+    {"source": "linkedin", "publisher_name": "LinkedIn", "source_url": "...", "is_direct": false},
+    {"source": "indeed", "publisher_name": "Indeed", "source_url": "...", "is_direct": false},
+    {"source": "company_site", "publisher_name": "Acme Careers", "source_url": "...", "is_direct": true}
+  ]
+}
+```
+
+Request every underlying posting row with:
+
+```text
+GET /api/v1/jobs/?collapse_canonical=false
 ```
 
 ## Determine hiring activity
-
-After collection completes, run identity classification and the first scoring batch:
 
 ```bash
 docker compose exec worker celery -A app.workers.celery_app call \
   joblens.analyze_hiring_activity --args='[1000]'
 ```
 
-Continue scoring until the worker result reports `remaining_unscored: 0`:
+Continue scoring until `remaining_unscored` is zero:
 
 ```bash
 docker compose exec worker celery -A app.workers.celery_app call \
   joblens.score_all_jobs --args='[1000, false]'
 ```
 
-A single scrape produces a preliminary score. Repeated daily sightings, snapshot changes, closures, and later reappearances make the history-based signals more informative.
+A first observation establishes a baseline. Repeated daily collection is what adds evidence about persistence, changes, closures, parallel advertisements, and later reposts.
 
-Inspect results:
-
-```bash
-docker compose exec postgres psql -U joblens -d joblens -c "
-SELECT title_raw, source, listing_classification,
-       ROUND(active_hiring_confidence::numeric, 1) AS hiring_confidence,
-       ROUND(ghost_job_probability::numeric, 3) AS ghost_probability,
-       days_active
-FROM job_postings
-WHERE active_hiring_confidence IS NOT NULL
-ORDER BY active_hiring_confidence DESC
-LIMIT 25;"
-```
-
-Open:
-
-- Frontend: `http://localhost:3000`
-- API documentation: `http://localhost:8000/docs`
-
-Restart scheduling after the manual test:
-
-```bash
-docker compose start beat
-```
-
-## Source configuration
-
-Only sources in `ENABLED_SCRAPER_SOURCES` are scheduled. The default is:
-
-```env
-ENABLED_SCRAPER_SOURCES=simplify
-```
-
-Other adapters require valid credentials and verified provider contracts. Add them individually after testing one source at a time.
-
-## Enrichment defaults
-
-These are disabled by default because they are expensive or externally rate-limited:
+## Safe enrichment defaults
 
 ```env
 GEOCODING_ENABLED=false
 DESCRIPTION_EMBEDDINGS_ENABLED=false
 SEMANTIC_TITLE_MATCHING_ENABLED=false
 IDENTITY_CANDIDATE_LIMIT=100
+AUTO_EXPIRE_STALE_JOBS=false
 ```
-
-Geocoding operates on cached **unique locations**, not every job posting. Semantic title matching can be enabled later, but structured title fields and bounded lexical matching are the safe default for large collections.
-
-`AUTO_EXPIRE_STALE_JOBS=false` is also conservative during initial testing. After scheduled collection has run reliably for several days, enable it to let postings that have not been seen for the configured stale period become inactive.
 
 ## Tests
 
 ```bash
 cd backend
-pytest tests -q
+pytest -q
 ```
 
 ```bash
@@ -170,4 +256,4 @@ npm run lint
 npm run build
 ```
 
-See `docs/next_steps.md`, `docs/validation.md`, `docs/identity_resolution.md`, and `docs/scraper_reliability.md` for implementation details.
+See `docs/sources/jsearch.md`, `docs/source_attribution.md`, `docs/next_steps.md`, `docs/scraper_reliability.md`, and `docs/validation.md`.

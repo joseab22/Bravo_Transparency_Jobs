@@ -20,6 +20,7 @@ from app.models.models import JobPosting
 from app.services.embedding_enrichment import enrich_embeddings
 from app.services.location_enrichment import enrich_locations
 from app.services.normalizer import calculate_days_active
+from app.services.request_budget import RapidAPIRequestBudget
 from app.services.repost_detector import RepostDetectionService
 from app.services.scoring import ScoringService
 from app.workers.ingestion import ingest_jobs
@@ -44,8 +45,11 @@ celery_app.conf.update(
 )
 
 SOURCE_SCHEDULES = {
-    "indeed": crontab(minute=0, hour="*/6"),
-    "linkedin": crontab(minute=10, hour="*/6"),
+    # Generic JSearch collection is validated against the protected monthly
+    # request budget in Settings. With the defaults this runs once daily.
+    "jsearch": crontab(minute=40, hour=f"*/{settings.jsearch_schedule_every_hours}"),
+    "indeed": crontab(minute=0, hour=5, day_of_week="sun"),
+    "linkedin": crontab(minute=20, hour=5, day_of_week="sun"),
     "glassdoor": crontab(minute=20, hour="*/6"),
     "ziprecruiter": crontab(minute=30, hour="*/6"),
     "dice": crontab(minute=40, hour="*/6"),
@@ -95,19 +99,22 @@ def release_scrape_lock(key: str, token: str) -> None:
 
 
 @celery_app.task(name="joblens.scrape_source", bind=True, max_retries=3)
-def task_scrape_source(self, source: str):
+def task_scrape_source(self, source: str, max_pages: int | None = None):
     source = source.lower()
     scrape_fn = SCRAPER_REGISTRY.get(source)
     if not scrape_fn:
         return {"status": "error", "error": f"Unknown source: {source}"}
-    lock = acquire_scrape_lock(source)
+    # All JSearch-backed adapters share one provider rate/quota lock. This
+    # prevents a manual LinkedIn task from overlapping a generic JSearch task.
+    lock_scope = "jsearch-provider" if source in {"jsearch", "linkedin", "indeed"} else source
+    lock = acquire_scrape_lock(lock_scope)
     if not lock:
-        log.warning("scrape_skipped_already_running", source=source)
+        log.warning("scrape_skipped_already_running", source=source, lock_scope=lock_scope)
         return {"source": source, "status": "skipped", "reason": "already running"}
     key, token = lock
     try:
         log.info("task_start", task="scrape_source", source=source)
-        jobs = run_async(scrape_fn())
+        jobs = run_async(scrape_fn(max_pages))
         result = run_async(_ingest(jobs))
         log.info("task_complete", source=source, **result)
         return {"source": source, "status": "completed", **result}
@@ -151,6 +158,12 @@ def task_enrich_locations(limit: int | None = None):
 @celery_app.task(name="joblens.enrich_embeddings")
 def task_enrich_embeddings(limit: int | None = None):
     return run_async(_enrich_embeddings(limit))
+
+
+@celery_app.task(name="joblens.jsearch_quota_status")
+def task_jsearch_quota_status():
+    """Return the protected local and provider-reported JSearch quota."""
+    return run_async(_jsearch_quota_status())
 
 
 async def _ingest(jobs: list[dict]) -> dict:
@@ -231,3 +244,16 @@ async def _enrich_locations(limit: int | None) -> dict:
 async def _enrich_embeddings(limit: int | None) -> dict:
     async with AsyncSessionLocal() as db:
         return await enrich_embeddings(db, limit)
+
+
+async def _jsearch_quota_status() -> dict[str, Any]:
+    budget = RapidAPIRequestBudget(
+        settings.redis_url,
+        namespace="jsearch",
+        monthly_limit=settings.jsearch_monthly_request_limit,
+        reserve=settings.jsearch_request_reserve,
+    )
+    try:
+        return (await budget.status()).as_dict()
+    finally:
+        await budget.close()

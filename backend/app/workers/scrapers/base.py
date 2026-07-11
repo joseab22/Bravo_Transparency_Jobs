@@ -24,6 +24,10 @@ class ScraperRateLimitError(ScraperRequestError):
     pass
 
 
+class ScraperBudgetExhaustedError(ScraperRequestError):
+    pass
+
+
 class BaseScraperAdapter(ABC):
     source_name = ""
     default_headers = {
@@ -48,6 +52,7 @@ class BaseScraperAdapter(ABC):
         self.minimum_delay = minimum_delay
         self.maximum_delay = maximum_delay
         self.max_records = max_records
+        self.request_count = 0
         self._client: Optional[httpx.AsyncClient] = None
 
     async def __aenter__(self):
@@ -79,6 +84,33 @@ class BaseScraperAdapter(ABC):
     def parse_job(self, raw: dict) -> Optional[dict]:
         raise NotImplementedError
 
+    async def before_request(self, url: str) -> None:
+        """Hook for shared quotas or source-specific request admission."""
+
+    async def after_response(self, response: httpx.Response) -> None:
+        """Hook for response-header accounting."""
+
+    def merge_duplicate(self, existing: dict, incoming: dict) -> dict:
+        """Merge duplicate records found across queries/pages without losing sources."""
+        merged = dict(existing)
+        existing_options = list(existing.get("source_options") or [])
+        incoming_options = list(incoming.get("source_options") or [])
+        seen = {
+            (item.get("sighting_key"), item.get("source"), item.get("source_url"))
+            for item in existing_options
+        }
+        for item in incoming_options:
+            key = (item.get("sighting_key"), item.get("source"), item.get("source_url"))
+            if key not in seen:
+                existing_options.append(item)
+                seen.add(key)
+        if existing_options:
+            merged["source_options"] = existing_options
+        for key, value in incoming.items():
+            if merged.get(key) in (None, "", [], {}) and value not in (None, "", [], {}):
+                merged[key] = value
+        return merged
+
     async def request_json(
         self,
         url: str,
@@ -91,7 +123,10 @@ class BaseScraperAdapter(ABC):
         client = await self._get_client()
         for attempt in range(1, self.max_request_attempts + 1):
             try:
+                await self.before_request(url)
+                self.request_count += 1
                 response = await client.request(method, url, headers=headers, params=params, json=json)
+                await self.after_response(response)
                 if response.status_code in self.retryable_status_codes:
                     delay = self._retry_delay(response, attempt)
                     event = "scraper_rate_limited" if response.status_code == 429 else "scraper_temporary_http_error"
@@ -121,7 +156,7 @@ class BaseScraperAdapter(ABC):
 
     async def scrape(self, queries: Optional[list[str]] = None) -> list[dict]:
         all_jobs: list[dict] = []
-        seen: set[str] = set()
+        positions: dict[str, int] = {}
         try:
             for query in (queries or self.default_queries()):
                 for page in range(1, self.max_pages + 1):
@@ -138,21 +173,31 @@ class BaseScraperAdapter(ABC):
                             if not parsed:
                                 continue
                             key = str(parsed.get("external_id") or parsed.get("source_url") or f"{parsed.get('company_name')}|{parsed.get('title_raw')}|{parsed.get('location_raw')}")
-                            if key in seen:
+                            if key in positions:
+                                index = positions[key]
+                                all_jobs[index] = self.merge_duplicate(all_jobs[index], parsed)
                                 continue
-                            seen.add(key)
+                            positions[key] = len(all_jobs)
                             all_jobs.append(parsed)
                             if self.max_records and len(all_jobs) >= self.max_records:
                                 log.info("scraper_record_cap_reached", source=self.source_name, total=len(all_jobs))
                                 return all_jobs
                         await asyncio.sleep(random.uniform(self.minimum_delay, self.maximum_delay))
+                    except ScraperBudgetExhaustedError as exc:
+                        log.warning("scraper_budget_exhausted", source=self.source_name, query=query, page=page, error=str(exc))
+                        return all_jobs
                     except ScraperRateLimitError as exc:
                         log.error("scraper_source_rate_limited", source=self.source_name, query=query, page=page, error=str(exc))
                         return all_jobs
                     except Exception as exc:
                         log.error("scraper_page_error", source=self.source_name, query=query, page=page, error=str(exc))
                         break
-            log.info("scraper_complete", source=self.source_name, total=len(all_jobs))
+            log.info(
+                "scraper_complete",
+                source=self.source_name,
+                total=len(all_jobs),
+                http_requests=self.request_count,
+            )
             return all_jobs
         finally:
             await self.close()

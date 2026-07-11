@@ -16,11 +16,30 @@ class SkillOut(ORMModel):
 
 
 class SourceSightingOut(ORMModel):
+    sighting_key: str
     source: str
+    publisher_name: Optional[str] = None
+    collection_provider: Optional[str] = None
     source_url: Optional[str] = None
+    external_id: Optional[str] = None
     applicant_count: Optional[int] = None
+    is_direct: bool = False
     first_seen: datetime
     last_seen: datetime
+
+
+class CanonicalSourceOut(BaseModel):
+    sighting_key: str
+    source: str
+    publisher_name: str
+    collection_provider: Optional[str] = None
+    source_url: Optional[str] = None
+    external_id: Optional[str] = None
+    is_direct: bool = False
+    first_seen: datetime
+    last_seen: datetime
+    is_active: bool
+    listing_ids: list[int] = Field(default_factory=list)
 
 
 class RepostEventOut(ORMModel):
@@ -53,6 +72,8 @@ class CompanyOut(ORMModel):
 class JobPostingListItem(ORMModel):
     id: int
     source: str
+    publisher_name: Optional[str] = None
+    collection_provider: Optional[str] = None
     source_url: Optional[str] = None
     external_id: Optional[str] = None
     title_raw: str
@@ -93,6 +114,7 @@ class JobPostingListItem(ORMModel):
     applicant_trend: Optional[float] = None
     salary_trend: Optional[float] = None
     source_sightings: list[SourceSightingOut] = Field(default_factory=list)
+    canonical_sources: list[CanonicalSourceOut] = Field(default_factory=list)
     skills: list[SkillOut] = Field(default_factory=list)
 
 

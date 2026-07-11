@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import math
-from typing import Optional
+from typing import Optional, TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.session import get_db
 from app.models.models import Company, JobPosting, JobSkill
-from app.schemas.jobs import JobPostingDetail, MarketStats, PaginatedJobsResponse
+from app.schemas.jobs import JobPostingDetail, JobPostingListItem, MarketStats, PaginatedJobsResponse
 from app.services.scoring import ScoringService
+from app.services.source_attribution import canonical_group_id, load_canonical_sources
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 SORT_COLS = {
@@ -25,6 +27,7 @@ LIST_OPTIONS = [
     selectinload(JobPosting.source_sightings),
 ]
 DETAIL_OPTIONS = LIST_OPTIONS + [selectinload(JobPosting.repost_events), selectinload(JobPosting.events)]
+SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 
 def _filters(
@@ -63,6 +66,18 @@ def _filters(
     return values
 
 
+async def _serialize_jobs(
+    jobs: list[JobPosting], db: AsyncSession, schema: type[SchemaT]
+) -> list[SchemaT]:
+    source_map = await load_canonical_sources(jobs, db)
+    return [
+        schema.model_validate(job).model_copy(
+            update={"canonical_sources": source_map.get(canonical_group_id(job), [])}
+        )
+        for job in jobs
+    ]
+
+
 @router.get("/", response_model=PaginatedJobsResponse)
 async def list_jobs(
     q: Optional[str] = None,
@@ -78,6 +93,7 @@ async def list_jobs(
     ghost_max: Optional[float] = Query(None, ge=0, le=1),
     health_min: Optional[float] = Query(None, ge=0, le=100),
     active_hiring_min: Optional[float] = Query(None, ge=0, le=100),
+    collapse_canonical: bool = True,
     sort_by: str = "active_hiring_confidence",
     sort_dir: str = "desc",
     page: int = Query(1, ge=1),
@@ -89,17 +105,56 @@ async def list_jobs(
         employment_type, metro_area, salary_min, salary_max, ghost_max,
         health_min, active_hiring_min,
     )
-    base = select(JobPosting).join(Company).where(*conditions)
-    total = await db.scalar(select(func.count()).select_from(base.with_only_columns(JobPosting.id).order_by(None).subquery())) or 0
     column = getattr(JobPosting, sort_by if sort_by in SORT_COLS else "active_hiring_confidence")
     order = asc(column).nulls_last() if sort_dir == "asc" else desc(column).nulls_last()
+
+    if collapse_canonical:
+        group_expr = func.coalesce(JobPosting.canonical_job_id, JobPosting.id)
+        ranked = (
+            select(
+                JobPosting.id.label("job_id"),
+                func.row_number().over(
+                    partition_by=group_expr,
+                    order_by=(
+                        JobPosting.active_hiring_confidence.desc().nullslast(),
+                        JobPosting.date_last_seen.desc(),
+                        JobPosting.id.asc(),
+                    ),
+                ).label("group_rank"),
+            )
+            .join(Company)
+            .where(*conditions)
+            .subquery()
+        )
+        representative_ids = select(ranked.c.job_id).where(ranked.c.group_rank == 1)
+        total = await db.scalar(
+            select(func.count(func.distinct(group_expr)))
+            .select_from(JobPosting)
+            .join(Company)
+            .where(*conditions)
+        ) or 0
+        base = select(JobPosting).where(JobPosting.id.in_(representative_ids))
+    else:
+        base = select(JobPosting).join(Company).where(*conditions)
+        total = await db.scalar(
+            select(func.count()).select_from(
+                base.with_only_columns(JobPosting.id).order_by(None).subquery()
+            )
+        ) or 0
+
     jobs = list((await db.execute(
-        base.options(*LIST_OPTIONS).order_by(order, JobPosting.id.desc())
-        .offset((page - 1) * page_size).limit(page_size)
+        base.options(*LIST_OPTIONS)
+        .order_by(order, JobPosting.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
     )).scalars().unique())
+    results = await _serialize_jobs(jobs, db, JobPostingListItem)
     return PaginatedJobsResponse(
-        total=total, page=page, page_size=page_size,
-        pages=math.ceil(total / page_size) if total else 0, results=jobs,
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=math.ceil(total / page_size) if total else 0,
+        results=results,
     )
 
 
@@ -108,9 +163,11 @@ async def market_stats(db: AsyncSession = Depends(get_db)):
     active = JobPosting.is_active.is_(True)
     total = await db.scalar(select(func.count(JobPosting.id)).where(active)) or 0
     scored = await db.scalar(select(func.count(JobPosting.id)).where(active, JobPosting.active_hiring_confidence.is_not(None))) or 0
+
     async def avg(column):
         value = await db.scalar(select(func.avg(column)).where(active))
         return float(value or 0)
+
     high_ghost = await db.scalar(select(func.count(JobPosting.id)).where(active, JobPosting.ghost_job_probability >= 0.60)) or 0
     total_apps = await db.scalar(select(func.sum(JobPosting.applicant_count)).where(active)) or 0
     classification_rows = (await db.execute(
@@ -142,17 +199,22 @@ async def market_stats(db: AsyncSession = Depends(get_db)):
 
 @router.get("/{job_id}", response_model=JobPostingDetail)
 async def get_job(job_id: int, db: AsyncSession = Depends(get_db)):
-    job = (await db.execute(select(JobPosting).options(*DETAIL_OPTIONS).where(JobPosting.id == job_id))).scalar_one_or_none()
+    job = (await db.execute(
+        select(JobPosting).options(*DETAIL_OPTIONS).where(JobPosting.id == job_id)
+    )).scalar_one_or_none()
     if not job:
         raise HTTPException(404, "Job not found")
-    return job
+    return (await _serialize_jobs([job], db, JobPostingDetail))[0]
 
 
 @router.post("/{job_id}/score")
 async def trigger_score(job_id: int, db: AsyncSession = Depends(get_db)):
     job = (await db.execute(
-        select(JobPosting).options(selectinload(JobPosting.company), selectinload(JobPosting.snapshots), selectinload(JobPosting.embedding))
-        .where(JobPosting.id == job_id)
+        select(JobPosting).options(
+            selectinload(JobPosting.company),
+            selectinload(JobPosting.snapshots),
+            selectinload(JobPosting.embedding),
+        ).where(JobPosting.id == job_id)
     )).scalar_one_or_none()
     if not job:
         raise HTTPException(404, "Job not found")

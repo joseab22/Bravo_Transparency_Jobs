@@ -45,6 +45,7 @@ class JobSource(str, enum.Enum):
     monster = "monster"
     simplify = "simplify"
     jobright = "jobright"
+    jsearch = "jsearch"
     company_site = "company_site"
 
 
@@ -99,12 +100,14 @@ class JobPosting(Base):
     )
     listing_classification: Mapped[str] = mapped_column(String(30), default="original", nullable=False, index=True)
     external_id: Mapped[Optional[str]] = mapped_column(String(255))
-    source: Mapped[str] = mapped_column(String(50), nullable=False)
+    source: Mapped[str] = mapped_column(String(100), nullable=False)
+    publisher_name: Mapped[Optional[str]] = mapped_column(String(255))
+    collection_provider: Mapped[Optional[str]] = mapped_column(String(50), index=True)
     source_url: Mapped[Optional[str]] = mapped_column(String(1000))
 
     title_raw: Mapped[str] = mapped_column(String(500), nullable=False)
     title_normalized: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
-    job_family: Mapped[Optional[str]] = mapped_column(String(200), index=True)
+    job_family: Mapped[Optional[str]] = mapped_column(String(500), index=True)
     specialization: Mapped[Optional[str]] = mapped_column(String(300))
     title_parse_confidence: Mapped[Optional[float]] = mapped_column(Float)
 
@@ -112,7 +115,7 @@ class JobPosting(Base):
     city: Mapped[Optional[str]] = mapped_column(String(200))
     state: Mapped[Optional[str]] = mapped_column(String(100))
     country: Mapped[Optional[str]] = mapped_column(String(100), default="US")
-    metro_area: Mapped[Optional[str]] = mapped_column(String(200), index=True)
+    metro_area: Mapped[Optional[str]] = mapped_column(String(500), index=True)
     latitude: Mapped[Optional[float]] = mapped_column(Float)
     longitude: Mapped[Optional[float]] = mapped_column(Float)
     remote_type: Mapped[Optional[str]] = mapped_column(String(50))
@@ -172,6 +175,7 @@ class JobPosting(Base):
         Index("ix_job_postings_identity_active", "job_identity_key", "is_active"),
         Index("ix_job_postings_fingerprint_active", "identity_fingerprint", "is_active"),
         Index("ix_job_postings_source_external", "source", "external_id"),
+        Index("ix_job_postings_provider_external", "collection_provider", "external_id"),
     )
 
 
@@ -180,7 +184,7 @@ class JobSnapshot(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     job_posting_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), nullable=False, index=True)
     snapshot_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, index=True)
-    source: Mapped[Optional[str]] = mapped_column(String(50))
+    source: Mapped[Optional[str]] = mapped_column(String(100))
     applicant_count: Mapped[Optional[int]] = mapped_column(Integer)
     description_raw: Mapped[Optional[str]] = mapped_column(Text)
     description_hash: Mapped[Optional[str]] = mapped_column(String(64))
@@ -197,7 +201,7 @@ class JobEvent(Base):
     job_posting_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), nullable=False, index=True)
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=utc_now, index=True)
-    source: Mapped[Optional[str]] = mapped_column(String(50))
+    source: Mapped[Optional[str]] = mapped_column(String(100))
     payload: Mapped[Optional[dict]] = mapped_column(JSON)
     description: Mapped[Optional[str]] = mapped_column(String(500))
     job_posting: Mapped["JobPosting"] = relationship(back_populates="events")
@@ -233,7 +237,7 @@ class RepostEvent(Base):
     job_identity_key: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
     occurrence_number: Mapped[int] = mapped_column(Integer, nullable=False)
     date_seen: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
-    source: Mapped[Optional[str]] = mapped_column(String(50))
+    source: Mapped[Optional[str]] = mapped_column(String(100))
     days_since_previous: Mapped[Optional[int]] = mapped_column(Integer)
     job_posting: Mapped["JobPosting"] = relationship(back_populates="repost_events")
 
@@ -242,21 +246,27 @@ class JobSourceSighting(Base):
     __tablename__ = "job_source_sightings"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     job_posting_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), nullable=False, index=True)
-    source: Mapped[str] = mapped_column(String(50), nullable=False)
+    sighting_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(100), nullable=False)
+    publisher_name: Mapped[Optional[str]] = mapped_column(String(255))
+    collection_provider: Mapped[Optional[str]] = mapped_column(String(50), index=True)
     source_url: Mapped[Optional[str]] = mapped_column(String(1000))
     external_id: Mapped[Optional[str]] = mapped_column(String(255))
+    is_direct: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     first_seen: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     applicant_count: Mapped[Optional[int]] = mapped_column(Integer)
     job_posting: Mapped["JobPosting"] = relationship(back_populates="source_sightings")
-    __table_args__ = (UniqueConstraint("job_posting_id", "source", name="uq_sightings_posting_source"),)
+    __table_args__ = (
+        UniqueConstraint("job_posting_id", "sighting_key", name="uq_sightings_posting_key"),
+    )
 
 
 class SalaryBenchmark(Base):
     __tablename__ = "salary_benchmarks"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     title_normalized: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
-    metro_area: Mapped[Optional[str]] = mapped_column(String(200))
+    metro_area: Mapped[Optional[str]] = mapped_column(String(500))
     seniority: Mapped[Optional[str]] = mapped_column(String(50))
     salary_p25: Mapped[Optional[int]] = mapped_column(Integer)
     salary_p50: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -276,7 +286,7 @@ class LocationCache(Base):
     city: Mapped[Optional[str]] = mapped_column(String(200))
     state: Mapped[Optional[str]] = mapped_column(String(100))
     country: Mapped[Optional[str]] = mapped_column(String(100))
-    metro_area: Mapped[Optional[str]] = mapped_column(String(200))
+    metro_area: Mapped[Optional[str]] = mapped_column(String(500))
     latitude: Mapped[Optional[float]] = mapped_column(Float)
     longitude: Mapped[Optional[float]] = mapped_column(Float)
     attempt_count: Mapped[int] = mapped_column(Integer, default=0)

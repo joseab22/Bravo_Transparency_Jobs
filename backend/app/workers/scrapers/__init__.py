@@ -4,6 +4,7 @@ Scraper registry.
 Import all adapters here so worker tasks can reference them by source name.
 """
 from app.workers.scrapers.base import BaseScraperAdapter
+from app.workers.scrapers.jsearch import scrape_jsearch
 from app.workers.scrapers.indeed import scrape_indeed
 from app.workers.scrapers.linkedin import scrape_linkedin
 from app.workers.scrapers.glassdoor import scrape_glassdoor
@@ -14,6 +15,7 @@ from app.workers.scrapers.jobright import scrape_jobright
 from app.workers.scrapers.simplify import scrape_simplify
 
 SCRAPER_REGISTRY = {
+    "jsearch": scrape_jsearch,
     "indeed": scrape_indeed,
     "linkedin": scrape_linkedin,
     "glassdoor": scrape_glassdoor,
@@ -27,6 +29,7 @@ SCRAPER_REGISTRY = {
 __all__ = [
     "BaseScraperAdapter",
     "SCRAPER_REGISTRY",
+    "scrape_jsearch",
     "scrape_indeed",
     "scrape_linkedin",
     "scrape_glassdoor",

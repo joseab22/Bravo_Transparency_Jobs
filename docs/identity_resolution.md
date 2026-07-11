@@ -63,3 +63,15 @@ joblens.run_repost_detection
 ```
 
 It rebuilds classification for the configured history window and only replaces repost events associated with the processed jobs. Any classification change clears old scores so Active Hiring Confidence is recalculated from current history.
+
+## Source-aware canonical display
+
+Source duplication and role-history classification are related but distinct:
+
+- repeated `collection_provider + external_id` records update one posting;
+- multiple publishers for that provider record are retained as source sightings;
+- different stable external IDs are not discarded during ingestion;
+- compatible rows can later share a `canonical_job_id` and be classified as parallel or repost occurrences;
+- collapsed API responses aggregate all publisher sightings across that canonical group.
+
+Thus, source evidence remains available even when the frontend shows one representative card.

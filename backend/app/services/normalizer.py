@@ -11,6 +11,7 @@ import re
 import unicodedata
 from datetime import datetime, timezone
 from typing import Any, Iterable, Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from app.core.config import settings
 from app.core.time import utc_now
@@ -31,10 +32,114 @@ def _slug(value: Any) -> str:
     return re.sub(r"[^a-z0-9]+", "-", _clean_words(value)).strip("-")
 
 
+
+
+def normalize_source_key(value: Any) -> str:
+    """Normalize a publisher/source label into a stable database key."""
+    key = _slug(value)
+    return (key or "unknown")[:100]
+
+
+_TRACKING_QUERY_KEYS = {
+    "utm_campaign", "utm_source", "utm_medium", "utm_term", "utm_content",
+    "gclid", "fbclid", "msclkid", "trk", "trackingid", "ref", "refid",
+    "from", "src", "source", "campaign", "gh_src", "lever-source", "iis", "iisn",
+}
+
+
+def normalize_source_url(value: Any) -> Optional[str]:
+    """Return a stable apply URL while removing common tracking parameters."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parts = urlsplit(text)
+        if not parts.scheme or not parts.netloc:
+            return text[:1000]
+        query = [
+            (key, item) for key, item in parse_qsl(parts.query, keep_blank_values=True)
+            if key.lower() not in _TRACKING_QUERY_KEYS
+        ]
+        normalized = urlunsplit((
+            parts.scheme.lower(),
+            parts.netloc.lower().removeprefix("www."),
+            parts.path.rstrip("/") or "/",
+            urlencode(sorted(query)),
+            "",
+        ))
+        return normalized[:1000]
+    except ValueError:
+        return text[:1000]
+
+
+def build_source_sighting_key(source: Any, source_url: Any, external_id: Any = None) -> str:
+    stable = "|".join((
+        normalize_source_key(source),
+        normalize_source_url(source_url) or "",
+        str(external_id or "").strip(),
+    ))
+    return hashlib.sha256(stable.encode()).hexdigest()
+
+
+def normalize_source_options(
+    options: Any,
+    *,
+    primary_source: str,
+    publisher_name: Optional[str],
+    collection_provider: str,
+    source_url: Optional[str],
+    external_id: Any,
+    applicant_count: Any,
+) -> list[dict[str, Any]]:
+    """Return one normalized sighting per distinct publisher/apply URL."""
+    raw_options = options if isinstance(options, list) else []
+    raw_options = [
+        {
+            "source": primary_source,
+            "publisher_name": publisher_name,
+            "collection_provider": collection_provider,
+            "source_url": source_url,
+            "external_id": external_id,
+            "applicant_count": applicant_count,
+        },
+        *[item for item in raw_options if isinstance(item, dict)],
+    ]
+
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in raw_options:
+        source = normalize_source_key(item.get("source") or item.get("publisher_name"))
+        provider = normalize_source_key(
+            item.get("collection_provider") or collection_provider or source
+        )[:50]
+        label = str(item.get("publisher_name") or source.replace("-", " ").title()).strip()[:255]
+        item_external_id = item.get("external_id")
+        normalized_url = normalize_source_url(item.get("source_url"))
+        sighting_key = str(item.get("sighting_key") or build_source_sighting_key(
+            source, normalized_url, item_external_id
+        ))[:64]
+        if sighting_key in seen:
+            continue
+        seen.add(sighting_key)
+        result.append({
+            "sighting_key": sighting_key,
+            "source": source,
+            "publisher_name": label,
+            "collection_provider": provider,
+            "source_url": normalized_url,
+            "external_id": str(item_external_id)[:255] if item_external_id not in (None, "") else None,
+            "applicant_count": item.get("applicant_count"),
+            "is_direct": bool(item.get("is_direct", False)),
+        })
+    return result
+
+
 def normalize_company_name(value: Any) -> str:
     text = _clean_words(value)
     text = re.sub(r"\b(incorporated|inc|llc|ltd|limited|corp|corporation|company|co)\b\.?", "", text)
-    return re.sub(r"\s+", " ", text).strip()
+    # Company.name_normalized is VARCHAR(255); keep every lookup and identity
+    # calculation on the same bounded representation.
+    return re.sub(r"\s+", " ", text).strip()[:255]
 
 
 SENIORITY_PATTERNS: list[tuple[str, str]] = [
@@ -207,15 +312,25 @@ def normalize_location_text(value: Any) -> Optional[str]:
     return text[:500]
 
 
+def normalize_metro_area(value: Any) -> Optional[str]:
+    """Return a database-safe analysis bucket while preserving raw locations separately."""
+    normalized = normalize_location_text(value)
+    if not normalized:
+        return None
+    if "|" in normalized or ";" in normalized:
+        return "Multiple locations"
+    return normalized[:500]
+
+
 def infer_location_components(location_raw: Any) -> dict[str, Optional[str]]:
     normalized = normalize_location_text(location_raw)
     if not normalized:
         return {"city": None, "state": None, "country": "US", "metro_area": None}
     if REMOTE_RE.search(normalized):
         return {"city": None, "state": None, "country": "US", "metro_area": "Remote"}
-    # Multi-location strings should remain one normalized label until enrichment.
+    # Preserve the full list in location_raw; use a stable short bucket for analysis.
     if "|" in normalized or ";" in normalized:
-        return {"city": None, "state": None, "country": "US", "metro_area": normalized}
+        return {"city": None, "state": None, "country": "US", "metro_area": "Multiple locations"}
     parts = [part.strip() for part in normalized.split(",") if part.strip()]
     city = parts[0] if parts else None
     state = None
@@ -364,8 +479,8 @@ def calculate_days_active(
 def prepare_job_record(raw: dict[str, Any]) -> dict[str, Any]:
     """Central normalization contract for every source before persistence."""
     record = dict(raw)
-    title_raw = str(record.get("title_raw") or record.get("title") or "").strip()
-    company_name = str(record.get("company_name") or record.get("company") or "").strip()
+    title_raw = str(record.get("title_raw") or record.get("title") or "").strip()[:500]
+    company_name = str(record.get("company_name") or record.get("company") or "").strip()[:255]
     if not title_raw or not company_name:
         raise ValueError("A job requires title_raw and company_name")
 
@@ -377,38 +492,66 @@ def prepare_job_record(raw: dict[str, Any]) -> dict[str, Any]:
     seniority = record.get("seniority") or parts["seniority"]
     family = parts["job_family"] or parts["title_normalized"]
     specialization = record.get("specialization") or parts["specialization"]
-    metro_area = record.get("metro_area") or components["metro_area"]
+    metro_area = normalize_metro_area(record.get("metro_area") or components["metro_area"])
 
     salary_min, salary_max = annualize_salary(
         record.get("salary_min"), record.get("salary_max"), record.get("salary_period", "year")
     )
     description = record.get("description_raw") or ""
 
+    source = normalize_source_key(record.get("source"))
+    collection_provider = normalize_source_key(record.get("collection_provider") or source)[:50]
+    publisher_name = str(
+        record.get("publisher_name") or source.replace("-", " ").title()
+    ).strip()[:255]
+    source_url = normalize_source_url(record.get("source_url"))
+    external_id = record.get("external_id")
+    source_options = normalize_source_options(
+        record.get("source_options"),
+        primary_source=source,
+        publisher_name=publisher_name,
+        collection_provider=collection_provider,
+        source_url=source_url,
+        external_id=external_id,
+        applicant_count=record.get("applicant_count"),
+    )
+
     record.update({
-        "source": str(record.get("source") or "").lower(),
+        "source": source,
+        "publisher_name": publisher_name,
+        "collection_provider": collection_provider,
+        "source_options": source_options,
+        "source_url": source_url,
+        "external_id": str(external_id)[:255] if external_id not in (None, "") else None,
         "company_name": company_name,
         "title_raw": title_raw,
-        "title_normalized": parts["title_normalized"],
-        "job_family": family,
-        "specialization": specialization,
+        "title_normalized": str(parts["title_normalized"] or "")[:500],
+        "job_family": str(family or "")[:500] or None,
+        "specialization": str(specialization or "")[:300] or None,
         "title_parse_confidence": parts["confidence"],
-        "seniority": seniority,
-        "employment_type": employment_type,
+        "seniority": str(seniority or "")[:50] or None,
+        "employment_type": str(employment_type or "")[:50] or None,
         "location_raw": location_raw,
-        "city": record.get("city") or components["city"],
-        "state": record.get("state") or components["state"],
-        "country": record.get("country") or components["country"] or "US",
-        "metro_area": metro_area,
-        "remote_type": remote_type,
+        "city": str(record.get("city") or components["city"] or "")[:200] or None,
+        "state": str(record.get("state") or components["state"] or "")[:100] or None,
+        "country": str(record.get("country") or components["country"] or "US")[:100],
+        "metro_area": str(metro_area or "")[:500] or None,
+        "remote_type": str(remote_type or "")[:50] or None,
         "latitude": record.get("latitude"),
         "longitude": record.get("longitude"),
         "salary_min": salary_min,
         "salary_max": salary_max,
-        "salary_currency": record.get("salary_currency") or "USD",
+        "salary_currency": str(record.get("salary_currency") or "USD")[:10],
         "salary_listed": salary_min is not None or salary_max is not None,
         "description_raw": description,
         "date_posted": parse_datetime(record.get("date_posted")),
         "applicant_count": record.get("applicant_count"),
+        "education_required": str(record.get("education_required") or "").strip()[:200] or None,
+        "experience_years_min": record.get("experience_years_min"),
+        "experience_years_max": record.get("experience_years_max"),
+        "department": str(record.get("department") or "").strip()[:200] or None,
+        "industry": str(record.get("industry") or "").strip()[:200] or None,
+        "company_website": (normalize_source_url(record.get("company_website")) or "")[:500] or None,
         "skills": record.get("skills") or extract_skills(description),
     })
     record["identity_fingerprint"] = build_identity_fingerprint(

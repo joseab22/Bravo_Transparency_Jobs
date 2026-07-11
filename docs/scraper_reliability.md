@@ -9,11 +9,42 @@ Every HTTP adapter uses the common base client, which provides:
 - exponential backoff with jitter;
 - retries for temporary `5xx`, timeout, and network errors;
 - delays between result pages;
-- per-run deduplication and optional record caps.
+- per-run duplicate merging and optional record caps.
 
 ## Duplicate-task prevention
 
-Celery uses a Redis lock per source. A second task for the same source is skipped while the first lock is active. Worker prefetch is `1` and local concurrency defaults to `1`.
+Celery uses Redis locks. Ordinary sources use one lock per source. Generic JSearch and its optional LinkedIn/Indeed targeted variants share the `jsearch-provider` lock so they cannot run concurrently and violate the provider rate limit. Worker prefetch is `1` and local concurrency defaults to `1`.
+
+## JSearch request-budget enforcement
+
+Every JSearch request attempt is reserved in Redis before transmission. This includes retries.
+
+Default Pro controls:
+
+```text
+monthly provider limit: 10,000
+JobLens local ceiling:   9,000
+reserved buffer:         1,000
+planned daily schedule:  2,170 requests per 31 days
+```
+
+The budget service also records RapidAPI's request-limit, remaining, and reset headers. Collection stops when provider-reported remaining requests reach the reserve, even when local usage is lower. Redis append-only persistence protects the counter across normal restarts.
+
+Configuration validation rejects a scheduled plan that exceeds the protected local budget and rejects simultaneous generic plus targeted JSearch scheduling unless `ALLOW_OVERLAPPING_JSEARCH_SOURCES=true`.
+
+Check status with:
+
+```bash
+docker compose exec worker python -m app.scripts.jsearch_quota
+```
+
+A dedicated RapidAPI key is still required for a strong no-overage guarantee because requests made outside JobLens consume the same provider quota.
+
+## JSearch pagination and attribution
+
+The adapter uses cursor-based `/search-v2` pagination. One cursor page is one request. It stores `collection_provider=jsearch` separately from the returned publisher, and preserves every distinct normalized apply URL.
+
+Simplify is excluded at both query and parser levels because JobLens already collects Simplify from its keyless public feeds. The exclusion prevents redundant result slots but cannot make an already-sent JSearch HTTP request free.
 
 ## Geocoding
 
@@ -36,4 +67,6 @@ This allows a large feed to make durable progress without performing model downl
 
 ## Source completeness
 
-A source task may ingest partial results after an upstream rate limit. For that reason, a single failed or partial run does not immediately mark absent listings inactive. The optional stale-job task uses a conservative time window and is disabled by default during initial testing.
+A source task may ingest partial results after an upstream rate limit or after the protected budget stops a run. A single failed or partial run therefore does not immediately mark absent listings inactive. The optional stale-job task uses a conservative window and is disabled by default during initial testing.
+
+A returned row count is not a unique-job count. Query overlap, repeated daily observations, and several publishers can all refer to the same canonical opening.

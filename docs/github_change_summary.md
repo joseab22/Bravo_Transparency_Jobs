@@ -2,19 +2,23 @@
 
 ## Commit title
 
-`fix: harden collection and hiring-activity analysis`
+`add safe JSearch Pro collection`
 
 ## Summary
 
-Separates scraping from expensive enrichment, prevents duplicate and rate-limited request storms, preserves parallel listings, and makes large-feed identity and scoring runs safer.
+Adds protected JSearch Pro pagination, accurate publisher/apply-link attribution, Simplify exclusion, and canonical multi-board display.
 
 ## Important changes
 
-- Removes per-posting geocoding and model generation from ingestion.
-- Adds cached, opt-in unique-location enrichment with Nominatim or Google support.
-- Adds shared HTTP backoff and Redis per-source task locks.
-- Prefetches companies and stable source IDs before batched ingestion.
-- Preserves simultaneous source listings and classifies original, parallel, and repost history afterward.
-- Bounds candidate comparisons and keeps semantic title matching opt-in.
-- Invalidates stale scores whenever identity or enriched location data changes.
-- Aligns ORM models, migrations, API schemas, frontend types, Docker, CI, tests, and documentation.
+- Stores `collection_provider` separately from actual publisher `source`.
+- Parses `job_publisher`, employer details, job structure, and every JSearch `apply_options` URL.
+- Uses `/search-v2` cursor pagination.
+- Excludes Simplify domains/publishers from JSearch while continuing direct Simplify collection.
+- Merges repeated provider IDs and preserves several URLs from one publisher.
+- Aggregates source evidence across canonical job groups.
+- Displays linked **Found on** chips, including numbered duplicate-publisher links and **Direct** employer links.
+- Adds migration `0006_source_sighting_links`.
+- Adds a Redis-backed 9,000-attempt ceiling, 1,000-request reserve, provider-header reconciliation, and persistent quota state.
+- Defaults generic JSearch to one daily run: 2,170 planned monthly requests.
+- Prevents generic and targeted JSearch schedules from overlapping by default.
+- Aligns settings, scrapers, normalization, ingestion, ORM, migrations, API, frontend, tests, Docker, and documentation.

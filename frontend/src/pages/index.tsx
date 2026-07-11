@@ -11,6 +11,35 @@ function confidenceLabel(value?: number | null): string {
   return "Lower confidence";
 }
 
+
+function sourceLinks(job: JobListItem) {
+  const sources = job.canonical_sources.length ? job.canonical_sources : [{
+    sighting_key: `legacy-${job.id}-${job.source}`,
+    source: job.source,
+    publisher_name: job.publisher_name || job.source,
+    source_url: job.source_url,
+    collection_provider: job.collection_provider,
+    external_id: null,
+    is_direct: false,
+    first_seen: job.date_first_seen,
+    last_seen: job.date_first_seen,
+    is_active: job.is_active,
+    listing_ids: [job.id],
+  }];
+  const totals = sources.reduce<Record<string, number>>((counts, source) => {
+    counts[source.publisher_name] = (counts[source.publisher_name] || 0) + 1;
+    return counts;
+  }, {});
+  const seen: Record<string, number> = {};
+  return sources.map((source) => {
+    seen[source.publisher_name] = (seen[source.publisher_name] || 0) + 1;
+    const label = totals[source.publisher_name] > 1
+      ? `${source.publisher_name} ${seen[source.publisher_name]}`
+      : source.publisher_name;
+    return { source, label };
+  });
+}
+
 function formatSalary(job: JobListItem): string | null {
   if (!job.salary_listed || (job.salary_min == null && job.salary_max == null)) return null;
   const formatter = new Intl.NumberFormat("en-US", { style: "currency", currency: job.salary_currency || "USD", maximumFractionDigits: 0 });
@@ -27,7 +56,13 @@ export default function Home() {
     setLoading(true);
     setError(null);
     try {
-      const data = await jobsApi.list({ page: 1, page_size: 20, sort_by: "active_hiring_confidence", sort_dir: "desc" });
+      const data = await jobsApi.list({
+        page: 1,
+        page_size: 20,
+        collapse_canonical: true,
+        sort_by: "active_hiring_confidence",
+        sort_dir: "desc",
+      });
       setJobs(data.results);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to load jobs");
@@ -65,7 +100,28 @@ export default function Home() {
                     <div>
                       <h2 className="text-xl font-semibold">{job.title_raw}</h2>
                       <p className="mt-1 text-slate-300">{job.company.name} · {job.location_raw || job.remote_type || "Location unavailable"}</p>
-                      <p className="mt-2 text-sm text-slate-400">{job.source} · {job.listing_classification} · {job.days_active} days observed{salary ? ` · ${salary}` : ""}</p>
+                      <p className="mt-2 text-sm text-slate-400">{job.listing_classification} · {job.days_active} days observed{salary ? ` · ${salary}` : ""}</p>
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+                        <span className="text-slate-400">Found on</span>
+                        {sourceLinks(job).map(({ source, label }) => (
+                          source.source_url ? (
+                            <a
+                              key={source.sighting_key}
+                              href={source.source_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={`Open this listing on ${source.publisher_name}`}
+                              className="rounded-full border border-cyan-500/40 bg-cyan-950/30 px-3 py-1 text-cyan-200 hover:border-cyan-300"
+                            >
+                              {label}{source.is_direct ? " · Direct" : ""}
+                            </a>
+                          ) : (
+                            <span key={source.sighting_key} className="rounded-full border border-slate-700 px-3 py-1 text-slate-300">
+                              {label}{source.is_direct ? " · Direct" : ""}
+                            </span>
+                          )
+                        ))}
+                      </div>
                     </div>
                     <div className="shrink-0 text-left sm:text-right">
                       <p className={`confidence ${confidence == null ? "unknown" : confidence >= 70 ? "high" : confidence >= 45 ? "medium" : "low"}`}>
