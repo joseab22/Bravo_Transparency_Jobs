@@ -42,6 +42,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://joblens:joblens_dev@postgres:5432/joblens
       REDIS_URL: redis://redis:6379/0
       ENV: development
+      AUTO_EXPIRE_STALE_JOBS: "true"
+      STALE_JOB_DAYS: "14"
       HF_HOME: /home/appuser/.cache/huggingface
     ports: ["8000:8000"]
     volumes:
@@ -71,6 +73,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://joblens:joblens_dev@postgres:5432/joblens
       REDIS_URL: redis://redis:6379/0
       ENV: development
+      AUTO_EXPIRE_STALE_JOBS: "true"
+      STALE_JOB_DAYS: "14"
       HF_HOME: /home/appuser/.cache/huggingface
     volumes:
       - ./backend:/app
@@ -93,6 +97,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://joblens:joblens_dev@postgres:5432/joblens
       REDIS_URL: redis://redis:6379/0
       ENV: development
+      AUTO_EXPIRE_STALE_JOBS: "true"
+      STALE_JOB_DAYS: "14"
     volumes:
       - ./backend:/app
     depends_on:

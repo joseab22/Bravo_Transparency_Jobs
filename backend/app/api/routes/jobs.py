@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.session import get_db
-from app.models.models import Company, JobPosting, JobSkill
+from app.models.models import Company, JobPosting, JobSkill, JobSourceSighting
 from app.schemas.jobs import JobPostingDetail, JobPostingListItem, MarketStats, PaginatedJobsResponse
 from app.services.scoring import ScoringService
 from app.services.source_attribution import canonical_group_id, load_canonical_sources
@@ -31,7 +31,7 @@ SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 
 def _filters(
-    q=None, industry=None, job_family=None, classification=None, remote_type=None,
+    q=None, industry=None, job_family=None, job_board=None, classification=None, remote_type=None,
     seniority=None, employment_type=None, metro_area=None, salary_min=None,
     salary_max=None, ghost_max=None, health_min=None, active_hiring_min=None,
 ):
@@ -43,6 +43,19 @@ def _filters(
         values.append(JobPosting.industry == industry)
     if job_family:
         values.append(JobPosting.job_family == job_family)
+    if job_board:
+        board = job_board.strip()
+        board_like = f"%{board}%"
+        values.append(or_(
+            JobPosting.source == board,
+            JobPosting.publisher_name.ilike(board_like),
+            JobPosting.collection_provider == board,
+            JobPosting.source_sightings.any(or_(
+                JobSourceSighting.source == board,
+                JobSourceSighting.publisher_name.ilike(board_like),
+                JobSourceSighting.collection_provider == board,
+            )),
+        ))
     if classification:
         values.append(JobPosting.listing_classification == classification)
     if remote_type:
@@ -83,6 +96,7 @@ async def list_jobs(
     q: Optional[str] = None,
     industry: Optional[str] = None,
     job_family: Optional[str] = None,
+    job_board: Optional[str] = None,
     classification: Optional[str] = None,
     remote_type: Optional[str] = None,
     seniority: Optional[str] = None,
@@ -101,7 +115,7 @@ async def list_jobs(
     db: AsyncSession = Depends(get_db),
 ):
     conditions = _filters(
-        q, industry, job_family, classification, remote_type, seniority,
+        q, industry, job_family, job_board, classification, remote_type, seniority,
         employment_type, metro_area, salary_min, salary_max, ghost_max,
         health_min, active_hiring_min,
     )

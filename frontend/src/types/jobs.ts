@@ -73,7 +73,16 @@ export interface JobFilters {
   page_size?: number;
   q?: string;
   job_family?: string;
+  job_board?: string;
   classification?: string;
+  remote_type?: string;
+  seniority?: string;
+  employment_type?: string;
+  metro_area?: string;
+  salary_min?: number;
+  salary_max?: number;
+  ghost_max?: number;
+  health_min?: number;
   active_hiring_min?: number;
   collapse_canonical?: boolean;
   sort_by?: string;
