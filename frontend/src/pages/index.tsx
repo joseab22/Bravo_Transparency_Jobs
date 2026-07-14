@@ -69,12 +69,14 @@ function formatSalary(job: JobListItem): string | null {
 
 export default function Home() {
   const [jobs, setJobs] = useState<JobListItem[]>([]);
+  const [totalResults, setTotalResults] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [q, setQ] = useState("");
   const [jobFamily, setJobFamily] = useState("");
   const [jobBoard, setJobBoard] = useState("");
+  const [applicantMax, setApplicantMax] = useState("");
   const [seniority, setSeniority] = useState("");
   const [employmentType, setEmploymentType] = useState("");
   const [remoteType, setRemoteType] = useState("");
@@ -86,6 +88,7 @@ export default function Home() {
   async function load() {
     setLoading(true);
     setError(null);
+    setTotalResults(null);
 
     try {
       const data = await jobsApi.list({
@@ -94,6 +97,7 @@ export default function Home() {
         q: q || undefined,
         job_family: jobFamily || undefined,
         job_board: jobBoard || undefined,
+        applicant_max: applicantMax ? Number(applicantMax) : undefined,
         seniority: seniority || undefined,
         employment_type: employmentType || undefined,
         remote_type: remoteType || undefined,
@@ -104,6 +108,13 @@ export default function Home() {
       });
 
       setJobs(data.results);
+
+      const responseTotal =
+        "total" in data && typeof data.total === "number"
+          ? data.total
+          : data.results.length;
+
+      setTotalResults(responseTotal);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to load jobs");
     } finally {
@@ -147,7 +158,7 @@ export default function Home() {
             <input
               value={q}
               onChange={(event) => setQ(event.target.value)}
-              placeholder="Search title/company"
+              placeholder="Search title, company, city, or state"
               className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500"
             />
 
@@ -169,7 +180,18 @@ export default function Home() {
             </select>
 
             
-            <label className="grid gap-1 text-sm text-slate-300">
+            
+            <input
+              aria-label="Max reported applicants"
+              value={applicantMax}
+              onChange={(event) => setApplicantMax(event.target.value)}
+              placeholder="Max reported applicants"
+              type="number"
+              min="0"
+              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500"
+            />
+
+<label className="grid gap-1 text-sm text-slate-300">
               <select
                 value={jobBoard}
                 onChange={(event) => setJobBoard(event.target.value)}
@@ -284,6 +306,22 @@ text = text.replace('  ', "")
             </p>
           )}
 
+
+          {!loading && !error && totalResults !== null && (
+            <div className="mt-8 rounded-lg border border-slate-800 bg-slate-900/70 p-4 text-sm text-slate-300">
+              {totalResults > 0 ? (
+                <p>
+                  Showing {jobs.length} of {totalResults} result{totalResults === 1 ? "" : "s"}.
+                </p>
+              ) : (
+                <p>
+                  No results found. Try clearing one or more filters, increasing the max reported
+                  applicants value, or searching a broader city, state, title, or company.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="mt-10 grid gap-4">
             {jobs.map((job) => {
               const salary = formatSalary(job);
@@ -314,6 +352,7 @@ text = text.replace('  ', "")
                         {job.listing_classification}
                         {job.repost_count > 0 ? ` · repost #${job.repost_count}` : ""}
                         · {job.days_active} days observed
+                        {job.applicant_count != null ? ` · ${job.applicant_count} reported applicants` : ""}
                         {salary ? ` · ${salary}` : ""}
                       </p>
 

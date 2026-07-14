@@ -84,6 +84,7 @@ export interface JobFilters {
   ghost_max?: number;
   health_min?: number;
   active_hiring_min?: number;
+  applicant_max?: number;
   collapse_canonical?: boolean;
   sort_by?: string;
   sort_dir?: "asc" | "desc";

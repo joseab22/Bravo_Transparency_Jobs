@@ -257,3 +257,20 @@ async def _jsearch_quota_status() -> dict[str, Any]:
         return (await budget.status()).as_dict()
     finally:
         await budget.close()
+
+
+# BEGIN AUTO LEARNING SCHEDULE
+# Add only the missing hiring-activity analysis schedule.
+try:
+    _joblens_celery_app = celery_app
+except NameError:
+    _joblens_celery_app = app
+
+_joblens_celery_app.conf.beat_schedule.update({
+    "joblens-analyze-hiring-activity-every-6-hours": {
+        "task": "joblens.analyze_hiring_activity",
+        "schedule": 60 * 60 * 6,
+    },
+})
+# END AUTO LEARNING SCHEDULE
+

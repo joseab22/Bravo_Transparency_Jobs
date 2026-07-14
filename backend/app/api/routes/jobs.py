@@ -33,12 +33,22 @@ SchemaT = TypeVar("SchemaT", bound=BaseModel)
 def _filters(
     q=None, industry=None, job_family=None, job_board=None, classification=None, remote_type=None,
     seniority=None, employment_type=None, metro_area=None, salary_min=None,
-    salary_max=None, ghost_max=None, health_min=None, active_hiring_min=None,
+    salary_max=None, ghost_max=None, health_min=None, active_hiring_min=None, applicant_max=None,
 ):
     values = [JobPosting.is_active.is_(True)]
     if q:
-        term = f"%{q}%"
-        values.append(or_(JobPosting.title_raw.ilike(term), JobPosting.title_normalized.ilike(term), Company.name.ilike(term)))
+        search = q.strip()
+        search_like = f"%{search}%"
+        compact_search_like = f"%{search.replace(',', '').strip()}%"
+
+        values.append(or_(
+            JobPosting.title_raw.ilike(search_like),
+            JobPosting.title_normalized.ilike(search_like),
+            JobPosting.location_raw.ilike(search_like),
+            JobPosting.location_raw.ilike(compact_search_like),
+            JobPosting.metro_area.ilike(search_like),
+            Company.name.ilike(search_like),
+        ))
     if industry:
         values.append(JobPosting.industry == industry)
     if job_family:
@@ -76,6 +86,11 @@ def _filters(
         values.append(JobPosting.health_score >= health_min)
     if active_hiring_min is not None:
         values.append(JobPosting.active_hiring_confidence >= active_hiring_min)
+    if applicant_max is not None:
+        values.append(or_(
+            JobPosting.applicant_count <= applicant_max,
+            JobPosting.applicant_count.is_(None),
+        ))
     return values
 
 
@@ -107,6 +122,7 @@ async def list_jobs(
     ghost_max: Optional[float] = Query(None, ge=0, le=1),
     health_min: Optional[float] = Query(None, ge=0, le=100),
     active_hiring_min: Optional[float] = Query(None, ge=0, le=100),
+    applicant_max: Optional[int] = Query(None, ge=0),
     collapse_canonical: bool = True,
     sort_by: str = "active_hiring_confidence",
     sort_dir: str = "desc",
@@ -117,7 +133,7 @@ async def list_jobs(
     conditions = _filters(
         q, industry, job_family, job_board, classification, remote_type, seniority,
         employment_type, metro_area, salary_min, salary_max, ghost_max,
-        health_min, active_hiring_min,
+        health_min, active_hiring_min, applicant_max,
     )
     column = getattr(JobPosting, sort_by if sort_by in SORT_COLS else "active_hiring_confidence")
     order = asc(column).nulls_last() if sort_dir == "asc" else desc(column).nulls_last()
