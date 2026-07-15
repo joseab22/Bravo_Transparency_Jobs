@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import math
-from typing import Optional, TypeVar
+from typing import Annotated, Literal, TypeVar
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
 from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.security import require_admin_key
 from app.db.session import get_db
 from app.models.models import Company, JobPosting, JobSkill, JobSourceSighting
 from app.schemas.jobs import JobPostingDetail, JobPostingListItem, MarketStats, PaginatedJobsResponse
@@ -16,10 +17,29 @@ from app.services.scoring import ScoringService
 from app.services.source_attribution import canonical_group_id, load_canonical_sources
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
-SORT_COLS = {
-    "active_hiring_confidence", "health_score", "ghost_job_probability",
-    "days_active", "salary_max", "applicant_count", "date_first_seen",
-    "activity_score", "competition_score",
+SortField = Literal[
+    "active_hiring_confidence",
+    "health_score",
+    "ghost_job_probability",
+    "days_active",
+    "salary_max",
+    "applicant_count",
+    "date_first_seen",
+    "activity_score",
+    "competition_score",
+]
+SortDirection = Literal["asc", "desc"]
+
+SORT_COLUMNS = {
+    "active_hiring_confidence": JobPosting.active_hiring_confidence,
+    "health_score": JobPosting.health_score,
+    "ghost_job_probability": JobPosting.ghost_job_probability,
+    "days_active": JobPosting.days_active,
+    "salary_max": JobPosting.salary_max,
+    "applicant_count": JobPosting.applicant_count,
+    "date_first_seen": JobPosting.date_first_seen,
+    "activity_score": JobPosting.activity_score,
+    "competition_score": JobPosting.competition_score,
 }
 LIST_OPTIONS = [
     selectinload(JobPosting.company),
@@ -108,26 +128,26 @@ async def _serialize_jobs(
 
 @router.get("/", response_model=PaginatedJobsResponse)
 async def list_jobs(
-    q: Optional[str] = None,
-    industry: Optional[str] = None,
-    job_family: Optional[str] = None,
-    job_board: Optional[str] = None,
-    classification: Optional[str] = None,
-    remote_type: Optional[str] = None,
-    seniority: Optional[str] = None,
-    employment_type: Optional[str] = None,
-    metro_area: Optional[str] = None,
-    salary_min: Optional[int] = None,
-    salary_max: Optional[int] = None,
-    ghost_max: Optional[float] = Query(None, ge=0, le=1),
-    health_min: Optional[float] = Query(None, ge=0, le=100),
-    active_hiring_min: Optional[float] = Query(None, ge=0, le=100),
-    applicant_max: Optional[int] = Query(None, ge=0),
+    q: Annotated[str | None, Query(max_length=100)] = None,
+    industry: Annotated[str | None, Query(max_length=100)] = None,
+    job_family: Annotated[str | None, Query(max_length=100)] = None,
+    job_board: Annotated[str | None, Query(max_length=100)] = None,
+    classification: Literal["original", "parallel", "repost"] | None = None,
+    remote_type: Literal["Remote", "Hybrid", "Onsite"] | None = None,
+    seniority: Literal["Entry", "Mid", "Senior", "Lead", "Executive"] | None = None,
+    employment_type: Literal["Full-time", "Part-time", "Contract", "Internship"] | None = None,
+    metro_area: Annotated[str | None, Query(max_length=100)] = None,
+    salary_min: Annotated[int | None, Query(ge=0, le=10_000_000)] = None,
+    salary_max: Annotated[int | None, Query(ge=0, le=10_000_000)] = None,
+    ghost_max: Annotated[float | None, Query(ge=0, le=1)] = None,
+    health_min: Annotated[float | None, Query(ge=0, le=100)] = None,
+    active_hiring_min: Annotated[float | None, Query(ge=0, le=100)] = None,
+    applicant_max: Annotated[int | None, Query(ge=0, le=1_000_000)] = None,
     collapse_canonical: bool = True,
-    sort_by: str = "active_hiring_confidence",
-    sort_dir: str = "desc",
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    sort_by: SortField = "active_hiring_confidence",
+    sort_dir: SortDirection = "desc",
+    page: Annotated[int, Query(ge=1, le=10_000)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
     db: AsyncSession = Depends(get_db),
 ):
     conditions = _filters(
@@ -135,7 +155,7 @@ async def list_jobs(
         employment_type, metro_area, salary_min, salary_max, ghost_max,
         health_min, active_hiring_min, applicant_max,
     )
-    column = getattr(JobPosting, sort_by if sort_by in SORT_COLS else "active_hiring_confidence")
+    column = SORT_COLUMNS[sort_by]
     order = asc(column).nulls_last() if sort_dir == "asc" else desc(column).nulls_last()
 
     if collapse_canonical:
@@ -228,7 +248,10 @@ async def market_stats(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{job_id}", response_model=JobPostingDetail)
-async def get_job(job_id: int, db: AsyncSession = Depends(get_db)):
+async def get_job(
+    job_id: Annotated[int, Path(ge=1)],
+    db: AsyncSession = Depends(get_db),
+):
     job = (await db.execute(
         select(JobPosting).options(*DETAIL_OPTIONS).where(JobPosting.id == job_id)
     )).scalar_one_or_none()
@@ -237,8 +260,14 @@ async def get_job(job_id: int, db: AsyncSession = Depends(get_db)):
     return (await _serialize_jobs([job], db, JobPostingDetail))[0]
 
 
-@router.post("/{job_id}/score")
-async def trigger_score(job_id: int, db: AsyncSession = Depends(get_db)):
+@router.post(
+    "/{job_id}/score",
+    dependencies=[Depends(require_admin_key)],
+)
+async def trigger_score(
+    job_id: Annotated[int, Path(ge=1)],
+    db: AsyncSession = Depends(get_db),
+):
     job = (await db.execute(
         select(JobPosting).options(
             selectinload(JobPosting.company),

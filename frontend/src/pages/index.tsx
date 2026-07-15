@@ -11,6 +11,26 @@ function confidenceLabel(value?: number | null): string {
   return "Lower confidence";
 }
 
+function safeExternalUrl(value?: string | null): string | null {
+  if (!value) return null;
+
+  try {
+    const parsed = new URL(value);
+
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return null;
+    }
+
+    if (parsed.username || parsed.password) {
+      return null;
+    }
+
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
 function sourceLinks(job: JobListItem) {
   const sources = job.canonical_sources.length
     ? job.canonical_sources
@@ -181,17 +201,28 @@ export default function Home() {
 
             
             
-            <input
-              aria-label="Max reported applicants"
-              value={applicantMax}
-              onChange={(event) => setApplicantMax(event.target.value)}
-              placeholder="Max reported applicants"
-              type="number"
-              min="0"
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500"
-            />
+            <div className="flex flex-col">
+              <input
+                aria-label="Max reported applicants"
+                value={applicantMax}
+                onChange={(event) => setApplicantMax(event.target.value)}
+                placeholder="Max reported applicants"
+                type="number"
+                min="0"
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500"
+              />
 
-<label className="grid gap-1 text-sm text-slate-300">
+              {applicantMax && (
+                <p
+                  role="note"
+                  className="mt-1.5 text-xs leading-5 text-amber-400"
+                >
+                  Jobs with unavailable applicant count data are included in these results.
+                </p>
+              )}
+            </div>
+
+            <label className="grid gap-1 text-sm text-slate-300">
               <select
                 value={jobBoard}
                 onChange={(event) => setJobBoard(event.target.value)}
@@ -207,11 +238,10 @@ export default function Home() {
                 <option value="monster">Monster</option>
                 <option value="jobright">Jobright</option>
                 <option value="simplify">Simplify</option>
-text = text.replace('  ', "")
               </select>
             </label>
 
-<select
+            <select
               value={seniority}
               onChange={(event) => setSeniority(event.target.value)}
               className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
@@ -359,13 +389,15 @@ text = text.replace('  ', "")
                       <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
                         <span className="text-slate-400">Found on</span>
 
-                        {sourceLinks(job).map(({ source, label }) =>
-                          source.source_url ? (
+                        {sourceLinks(job).map(({ source, label }) => {
+                          const safeUrl = safeExternalUrl(source.source_url);
+
+                          return safeUrl ? (
                             <a
                               key={source.sighting_key}
-                              href={source.source_url}
+                              href={safeUrl}
                               target="_blank"
-                              rel="noreferrer"
+                              rel="noopener noreferrer"
                               title={`Open this listing on ${source.publisher_name}`}
                               className="rounded-full border border-cyan-500/40 bg-cyan-950/30 px-3 py-1 text-cyan-200 hover:border-cyan-300"
                             >
@@ -375,13 +407,14 @@ text = text.replace('  ', "")
                           ) : (
                             <span
                               key={source.sighting_key}
+                              title="The source URL was unavailable or invalid"
                               className="rounded-full border border-slate-700 px-3 py-1 text-slate-300"
                             >
                               {label}
                               {source.is_direct ? " · Direct" : ""}
                             </span>
-                          ),
-                        )}
+                          );
+                        })}
                       </div>
                     </div>
 

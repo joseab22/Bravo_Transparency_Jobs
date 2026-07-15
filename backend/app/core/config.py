@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
     debug: bool = False
     cors_origins: str = "http://localhost:3000"
+    admin_api_key: str = ""
 
     # Database / queue
     database_url: str = "postgresql+asyncpg://joblens:joblens_dev@localhost:5432/joblens"
