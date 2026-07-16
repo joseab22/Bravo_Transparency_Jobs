@@ -4,6 +4,8 @@ import { useState } from "react";
 import { jobsApi } from "@/lib/api";
 import type { JobListItem } from "@/types/jobs";
 
+const PAGE_SIZE = 50;
+
 function confidenceLabel(value?: number | null): string {
   if (value == null) return "Not scored";
   if (value >= 70) return "Higher confidence";
@@ -90,6 +92,8 @@ function formatSalary(job: JobListItem): string | null {
 export default function Home() {
   const [jobs, setJobs] = useState<JobListItem[]>([]);
   const [totalResults, setTotalResults] = useState<number | null>(null);
+  const [totalPages, setTotalPages] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -105,15 +109,16 @@ export default function Home() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [collapseCanonical, setCollapseCanonical] = useState(true);
 
-  async function load() {
+  async function load(targetPage = 1, scrollAfterLoad = false) {
+    if (targetPage < 1) return;
+
     setLoading(true);
     setError(null);
-    setTotalResults(null);
 
     try {
       const data = await jobsApi.list({
-        page: 1,
-        page_size: 50,
+        page: targetPage,
+        page_size: PAGE_SIZE,
         q: q || undefined,
         job_family: jobFamily || undefined,
         job_board: jobBoard || undefined,
@@ -128,19 +133,29 @@ export default function Home() {
       });
 
       setJobs(data.results);
+      setTotalResults(data.total);
+      setTotalPages(data.pages);
+      setPage(data.page);
 
-      const responseTotal =
-        "total" in data && typeof data.total === "number"
-          ? data.total
-          : data.results.length;
-
-      setTotalResults(responseTotal);
+      if (scrollAfterLoad) {
+        window.requestAnimationFrame(() => {
+          window.scrollTo({
+            top: 0,
+            behavior: "smooth",
+          });
+        });
+      }
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to load jobs");
     } finally {
       setLoading(false);
     }
   }
+
+  const firstVisibleResult = totalResults && jobs.length > 0 ? (page - 1) * PAGE_SIZE + 1 : 0;
+  const lastVisibleResult = totalResults
+    ? Math.min((page - 1) * PAGE_SIZE + jobs.length, totalResults)
+    : 0;
 
   return (
     <>
@@ -199,8 +214,6 @@ export default function Home() {
               <option value="project manager">Project manager</option>
             </select>
 
-            
-            
             <div className="flex flex-col">
               <input
                 aria-label="Max reported applicants"
@@ -213,33 +226,29 @@ export default function Home() {
               />
 
               {applicantMax && (
-                <p
-                  role="note"
-                  className="mt-1.5 text-xs leading-5 text-amber-400"
-                >
+                <p role="note" className="mt-1.5 text-xs leading-5 text-amber-400">
                   Jobs with unavailable applicant count data are included in these results.
                 </p>
               )}
             </div>
 
-            <label className="grid gap-1 text-sm text-slate-300">
-              <select
-                value={jobBoard}
-                onChange={(event) => setJobBoard(event.target.value)}
-                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
-              >
-                <option value="">All job boards</option>
-                <option value="company_site">Company site</option>
-                <option value="linkedin">LinkedIn</option>
-                <option value="indeed">Indeed</option>
-                <option value="glassdoor">Glassdoor</option>
-                <option value="ziprecruiter">ZipRecruiter</option>
-                <option value="dice">Dice</option>
-                <option value="monster">Monster</option>
-                <option value="jobright">Jobright</option>
-                <option value="simplify">Simplify</option>
-              </select>
-            </label>
+            <select
+              aria-label="Job board"
+              value={jobBoard}
+              onChange={(event) => setJobBoard(event.target.value)}
+              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
+            >
+              <option value="">All job boards</option>
+              <option value="company_site">Company site</option>
+              <option value="linkedin">LinkedIn</option>
+              <option value="indeed">Indeed</option>
+              <option value="glassdoor">Glassdoor</option>
+              <option value="ziprecruiter">ZipRecruiter</option>
+              <option value="dice">Dice</option>
+              <option value="monster">Monster</option>
+              <option value="jobright">Jobright</option>
+              <option value="simplify">Simplify</option>
+            </select>
 
             <select
               value={seniority}
@@ -323,7 +332,8 @@ export default function Home() {
           </div>
 
           <button
-            onClick={load}
+            type="button"
+            onClick={() => load(1)}
             disabled={loading}
             className="mt-6 rounded-lg bg-cyan-300 px-5 py-3 font-semibold text-slate-950 disabled:opacity-60"
           >
@@ -336,12 +346,12 @@ export default function Home() {
             </p>
           )}
 
-
           {!loading && !error && totalResults !== null && (
             <div className="mt-8 rounded-lg border border-slate-800 bg-slate-900/70 p-4 text-sm text-slate-300">
               {totalResults > 0 ? (
                 <p>
-                  Showing {jobs.length} of {totalResults} result{totalResults === 1 ? "" : "s"}.
+                  Showing {firstVisibleResult}–{lastVisibleResult} of {totalResults} result
+                  {totalResults === 1 ? "" : "s"}. Page {page} of {Math.max(totalPages, 1)}.
                 </p>
               ) : (
                 <p>
@@ -350,6 +360,35 @@ export default function Home() {
                 </p>
               )}
             </div>
+          )}
+
+          {!loading && !error && totalResults !== null && totalResults > 0 && totalPages > 1 && (
+            <nav
+              aria-label="Top job results pagination"
+              className="mt-4 flex items-center justify-between gap-4 rounded-lg border border-slate-800 bg-slate-900/50 p-3"
+            >
+              <button
+                type="button"
+                onClick={() => load(page - 1, true)}
+                disabled={page <= 1 || loading}
+                className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-300 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Previous
+              </button>
+
+              <p className="text-sm text-slate-400">
+                Page {page} of {totalPages}
+              </p>
+
+              <button
+                type="button"
+                onClick={() => load(page + 1, true)}
+                disabled={page >= totalPages || loading}
+                className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-300 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next
+              </button>
+            </nav>
           )}
 
           <div className="mt-10 grid gap-4">
@@ -381,8 +420,10 @@ export default function Home() {
                       <p className="mt-2 text-sm text-slate-400">
                         {job.listing_classification}
                         {job.repost_count > 0 ? ` · repost #${job.repost_count}` : ""}
-                        · {job.days_active} days observed
-                        {job.applicant_count != null ? ` · ${job.applicant_count} reported applicants` : ""}
+                        {` · ${job.days_active} days observed`}
+                        {job.applicant_count != null
+                          ? ` · ${job.applicant_count} reported applicants`
+                          : ""}
                         {salary ? ` · ${salary}` : ""}
                       </p>
 
@@ -440,6 +481,35 @@ export default function Home() {
               );
             })}
           </div>
+
+          {!loading && !error && totalResults !== null && totalResults > 0 && totalPages > 1 && (
+            <nav
+              aria-label="Job results pagination"
+              className="mt-8 flex items-center justify-between gap-4"
+            >
+              <button
+                type="button"
+                onClick={() => load(page - 1, true)}
+                disabled={page <= 1 || loading}
+                className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-300 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Previous
+              </button>
+
+              <p className="text-sm text-slate-400">
+                Page {page} of {totalPages}
+              </p>
+
+              <button
+                type="button"
+                onClick={() => load(page + 1, true)}
+                disabled={page >= totalPages || loading}
+                className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-300 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next
+              </button>
+            </nav>
+          )}
         </section>
       </main>
     </>
