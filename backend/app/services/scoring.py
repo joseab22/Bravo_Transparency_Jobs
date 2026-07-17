@@ -161,19 +161,39 @@ class ScoringService:
         return None if len(mids) < 2 else mean([mids[i] - mids[i - 1] for i in range(1, len(mids))])
 
     async def update_company_metrics(self, db: AsyncSession) -> int:
-        companies = list((await db.execute(select(Company))).scalars())
-        updated = 0
-        for company in companies:
-            jobs = list((await db.execute(select(JobPosting).where(
-                JobPosting.company_id == company.id,
+        """Refresh company metrics without issuing one job query per company."""
+        aggregate_rows = (await db.execute(
+            select(
+                JobPosting.company_id,
+                func.avg(JobPosting.active_hiring_confidence).label("hiring_intensity"),
+                func.avg(JobPosting.ghost_job_probability).label("ghost_job_rate"),
+                func.avg(func.coalesce(JobPosting.repost_count, 0)).label("avg_reposts"),
+            )
+            .where(
                 JobPosting.is_active.is_(True),
                 JobPosting.active_hiring_confidence.is_not(None),
-            ))).scalars())
-            if not jobs:
+            )
+            .group_by(JobPosting.company_id)
+        )).all()
+
+        metrics = {
+            row.company_id: (
+                float(row.hiring_intensity) if row.hiring_intensity is not None else None,
+                float(row.ghost_job_rate) if row.ghost_job_rate is not None else None,
+                float(row.avg_reposts) if row.avg_reposts is not None else None,
+            )
+            for row in aggregate_rows
+        }
+
+        companies = list((await db.execute(select(Company))).scalars())
+        for company in companies:
+            values = metrics.get(company.id)
+            if values is None:
+                company.hiring_intensity = None
+                company.ghost_job_rate = None
+                company.avg_reposts = None
                 continue
-            company.hiring_intensity = mean(j.active_hiring_confidence for j in jobs if j.active_hiring_confidence is not None)
-            company.ghost_job_rate = mean(j.ghost_job_probability for j in jobs if j.ghost_job_probability is not None)
-            company.avg_reposts = mean(j.repost_count or 0 for j in jobs)
-            updated += 1
+            company.hiring_intensity, company.ghost_job_rate, company.avg_reposts = values
+
         await db.flush()
-        return updated
+        return len(metrics)

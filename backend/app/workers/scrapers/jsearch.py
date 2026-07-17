@@ -236,6 +236,9 @@ class JSearchScraper(BaseScraperAdapter):
         if self.publisher_filter:
             value = f"{value} via {self.publisher_filter}"
 
+        for domain in sorted(settings.jsearch_excluded_domain_set):
+            value = f"{value} -site:{domain}"
+
         return value
 
     def extract_job_list(self, payload: Any) -> list[dict[str, Any]]:
@@ -261,11 +264,9 @@ class JSearchScraper(BaseScraperAdapter):
 
     async def fetch_jobs(self, query: str, page: int = 1) -> dict:
         if not settings.openwebninja_api_key:
-            log.warning(
-                f"{self.source_name}_no_api_key",
-                hint="Set OPENWEBNINJA_API_KEY in backend/.env",
+            raise RuntimeError(
+                "OPENWEBNINJA_API_KEY is required for JSearch collection"
             )
-            return {"data": {"jobs": []}}
 
         params = {
             "query": self._search_query(query),

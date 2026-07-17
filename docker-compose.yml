@@ -33,6 +33,29 @@ services:
       retries: 10
     restart: unless-stopped
 
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: ../infrastructure/docker/Dockerfile.backend
+    container_name: joblens_migrate
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+asyncpg://joblens:joblens_dev@postgres:5432/joblens
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: alembic upgrade head
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+
   backend:
     build:
       context: ./backend
@@ -44,9 +67,6 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://joblens:joblens_dev@postgres:5432/joblens
       REDIS_URL: redis://redis:6379/0
-      ENV: development
-      AUTO_EXPIRE_STALE_JOBS: "true"
-      STALE_JOB_DAYS: "14"
       HF_HOME: /home/appuser/.cache/huggingface
     ports:
       - "127.0.0.1:8000:8000"
@@ -54,11 +74,11 @@ services:
       - ./backend:/app
       - hf_cache:/home/appuser/.cache/huggingface
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -80,16 +100,13 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://joblens:joblens_dev@postgres:5432/joblens
       REDIS_URL: redis://redis:6379/0
-      ENV: development
-      AUTO_EXPIRE_STALE_JOBS: "true"
-      STALE_JOB_DAYS: "14"
       HF_HOME: /home/appuser/.cache/huggingface
     volumes:
       - ./backend:/app
       - hf_cache:/home/appuser/.cache/huggingface
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=1
@@ -108,14 +125,11 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://joblens:joblens_dev@postgres:5432/joblens
       REDIS_URL: redis://redis:6379/0
-      ENV: development
-      AUTO_EXPIRE_STALE_JOBS: "true"
-      STALE_JOB_DAYS: "14"
     volumes:
       - ./backend:/app
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     command: celery -A app.workers.celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule
@@ -127,9 +141,9 @@ services:
     build:
       context: ./frontend
       dockerfile: ../infrastructure/docker/Dockerfile.frontend
+      target: development
     container_name: joblens_frontend
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
       BACKEND_INTERNAL_URL: http://backend:8000
       NEXT_TELEMETRY_DISABLED: "1"
     ports:

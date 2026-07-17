@@ -47,6 +47,7 @@ export interface JobListItem {
   salary_listed: boolean;
   date_posted?: string | null;
   date_first_seen: string;
+  date_last_seen: string;
   days_active: number;
   applicant_count?: number | null;
   listing_classification: "original" | "parallel" | "repost" | string;
@@ -85,6 +86,7 @@ export interface JobFilters {
   health_min?: number;
   active_hiring_min?: number;
   applicant_max?: number;
+  max_age_days?: number;
   collapse_canonical?: boolean;
   sort_by?: string;
   sort_dir?: "asc" | "desc";

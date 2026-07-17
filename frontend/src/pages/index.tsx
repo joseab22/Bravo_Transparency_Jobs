@@ -1,10 +1,81 @@
 import Head from "next/head";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { jobsApi } from "@/lib/api";
 import type { JobListItem } from "@/types/jobs";
 
 const PAGE_SIZE = 50;
+const DEFAULT_MAX_AGE_DAYS = 30;
+const MILLISECONDS_PER_DAY = 86_400_000;
+
+function parseApiDate(value?: string | null): Date | null {
+  if (!value) return null;
+
+  const normalized = /(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? value : `${value}Z`;
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function utcDayNumber(value?: string | null): number | null {
+  const parsed = parseApiDate(value);
+  if (!parsed) return null;
+
+  return Math.floor(
+    Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()) /
+      MILLISECONDS_PER_DAY,
+  );
+}
+
+function daysAgo(value?: string | null): number | null {
+  const day = utcDayNumber(value);
+  if (day == null) return null;
+
+  const now = new Date();
+  const today = Math.floor(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) /
+      MILLISECONDS_PER_DAY,
+  );
+
+  return Math.max(today - day, 0);
+}
+
+function daysBetween(start?: string | null, end?: string | null): number | null {
+  const startDay = utcDayNumber(start);
+  const endDay = utcDayNumber(end);
+  if (startDay == null || endDay == null) return null;
+
+  return Math.max(endDay - startDay, 0);
+}
+
+function dayLabel(value: number): string {
+  return `${value} day${value === 1 ? "" : "s"}`;
+}
+
+function ageSummary(job: JobListItem): string {
+  const postingAge = daysAgo(job.date_posted);
+  const firstSeenAge = daysAgo(job.date_first_seen);
+  const trackedDays = daysBetween(job.date_first_seen, job.date_last_seen);
+
+  const postingText =
+    postingAge == null
+      ? firstSeenAge === 0
+        ? "first observed today"
+        : firstSeenAge == null
+          ? "posting date unavailable"
+          : `first observed ${dayLabel(firstSeenAge)} ago`
+      : postingAge === 0
+        ? "posted today"
+        : `posted ${dayLabel(postingAge)} ago`;
+
+  const trackingText =
+    trackedDays == null
+      ? null
+      : trackedDays === 0
+        ? "tracked today"
+        : `tracked for ${dayLabel(trackedDays)}`;
+
+  return trackingText ? `${postingText} · ${trackingText}` : postingText;
+}
 
 function confidenceLabel(value?: number | null): string {
   if (value == null) return "Not scored";
@@ -46,7 +117,7 @@ function sourceLinks(job: JobListItem) {
           external_id: null,
           is_direct: false,
           first_seen: job.date_first_seen,
-          last_seen: job.date_first_seen,
+          last_seen: job.date_last_seen,
           is_active: job.is_active,
           listing_ids: [job.id],
         },
@@ -108,6 +179,7 @@ export default function Home() {
   const [sortBy, setSortBy] = useState("active_hiring_confidence");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [collapseCanonical, setCollapseCanonical] = useState(true);
+  const [includeOlderJobs, setIncludeOlderJobs] = useState(false);
 
   async function load(targetPage = 1, scrollAfterLoad = false) {
     if (targetPage < 1) return;
@@ -123,6 +195,7 @@ export default function Home() {
         job_family: jobFamily || undefined,
         job_board: jobBoard || undefined,
         applicant_max: applicantMax ? Number(applicantMax) : undefined,
+        max_age_days: includeOlderJobs ? undefined : DEFAULT_MAX_AGE_DAYS,
         seniority: seniority || undefined,
         employment_type: employmentType || undefined,
         remote_type: remoteType || undefined,
@@ -151,6 +224,12 @@ export default function Home() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    void load(1);
+    // Initial load only; filter changes are applied when the search form is submitted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const firstVisibleResult = totalResults && jobs.length > 0 ? (page - 1) * PAGE_SIZE + 1 : 0;
   const lastVisibleResult = totalResults
@@ -189,8 +268,15 @@ export default function Home() {
             Active Hiring Confidence (Ghost Job Filtering) · Repost tracking · Salary transparency
           </p>
 
-          <div className="mt-8 grid gap-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4 sm:grid-cols-2 lg:grid-cols-4">
+          <form
+            className="mt-8 grid gap-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4 sm:grid-cols-2 lg:grid-cols-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void load(1);
+            }}
+          >
             <input
+              aria-label="Search jobs"
               value={q}
               onChange={(event) => setQ(event.target.value)}
               placeholder="Search title, company, city, or state"
@@ -198,6 +284,7 @@ export default function Home() {
             />
 
             <select
+              aria-label="Role type"
               value={jobFamily}
               onChange={(event) => setJobFamily(event.target.value)}
               className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
@@ -251,6 +338,7 @@ export default function Home() {
             </select>
 
             <select
+              aria-label="Seniority"
               value={seniority}
               onChange={(event) => setSeniority(event.target.value)}
               className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
@@ -264,6 +352,7 @@ export default function Home() {
             </select>
 
             <select
+              aria-label="Employment type"
               value={employmentType}
               onChange={(event) => setEmploymentType(event.target.value)}
               className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
@@ -276,6 +365,7 @@ export default function Home() {
             </select>
 
             <select
+              aria-label="Work arrangement"
               value={remoteType}
               onChange={(event) => setRemoteType(event.target.value)}
               className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
@@ -287,6 +377,7 @@ export default function Home() {
             </select>
 
             <select
+              aria-label="Listing classification"
               value={classification}
               onChange={(event) => setClassification(event.target.value)}
               className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
@@ -298,13 +389,14 @@ export default function Home() {
             </select>
 
             <select
+              aria-label="Sort jobs by"
               value={sortBy}
               onChange={(event) => setSortBy(event.target.value)}
               className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
             >
               <option value="active_hiring_confidence">Sort by confidence</option>
+              <option value="date_posted">Sort by posting date</option>
               <option value="date_first_seen">Sort by newest seen</option>
-              <option value="days_active">Sort by days active</option>
               <option value="ghost_job_probability">Sort by ghost probability</option>
               <option value="health_score">Sort by health score</option>
               <option value="salary_max">Sort by salary</option>
@@ -312,6 +404,7 @@ export default function Home() {
             </select>
 
             <select
+              aria-label="Sort direction"
               value={sortDir}
               onChange={(event) => setSortDir(event.target.value as "asc" | "desc")}
               className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
@@ -329,16 +422,25 @@ export default function Home() {
               />
               Collapse related listings
             </label>
-          </div>
 
-          <button
-            type="button"
-            onClick={() => load(1)}
-            disabled={loading}
-            className="mt-6 rounded-lg bg-cyan-300 px-5 py-3 font-semibold text-slate-950 disabled:opacity-60"
-          >
-            {loading ? "Loading…" : "Load jobs from API"}
-          </button>
+            <label className="flex items-center gap-2 text-sm text-slate-300">
+              <input
+                type="checkbox"
+                checked={includeOlderJobs}
+                onChange={(event) => setIncludeOlderJobs(event.target.checked)}
+                className="h-4 w-4"
+              />
+              Include jobs posted over {DEFAULT_MAX_AGE_DAYS} days ago
+            </label>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="rounded-lg bg-cyan-300 px-5 py-3 font-semibold text-slate-950 disabled:opacity-60 sm:col-span-2 lg:col-span-4"
+            >
+              {loading ? "Loading…" : "Search jobs"}
+            </button>
+          </form>
 
           {error && (
             <p className="mt-4 rounded-lg border border-red-500/40 bg-red-950/40 p-4 text-red-200">
@@ -347,11 +449,18 @@ export default function Home() {
           )}
 
           {!loading && !error && totalResults !== null && (
-            <div className="mt-8 rounded-lg border border-slate-800 bg-slate-900/70 p-4 text-sm text-slate-300">
+            <div
+              className="mt-8 rounded-lg border border-slate-800 bg-slate-900/70 p-4 text-sm text-slate-300"
+              role="status"
+              aria-live="polite"
+            >
               {totalResults > 0 ? (
                 <p>
                   Showing {firstVisibleResult}–{lastVisibleResult} of {totalResults} result
                   {totalResults === 1 ? "" : "s"}. Page {page} of {Math.max(totalPages, 1)}.
+                  {!includeOlderJobs
+                    ? ` Limited to jobs posted within the last ${DEFAULT_MAX_AGE_DAYS} days.`
+                    : " Older jobs are included."}
                 </p>
               ) : (
                 <p>
@@ -391,6 +500,23 @@ export default function Home() {
             </nav>
           )}
 
+          {loading && jobs.length === 0 && (
+            <div className="mt-10 grid gap-4" aria-label="Loading jobs">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <div
+                  key={index}
+                  className="h-36 animate-pulse rounded-xl border border-slate-800 bg-slate-900/70"
+                />
+              ))}
+            </div>
+          )}
+
+          {!loading && !error && totalResults === 0 && (
+            <div className="mt-10 rounded-xl border border-slate-800 bg-slate-900/70 p-6 text-center text-slate-300">
+              No jobs match these filters. Try a broader search or clear one or more filters.
+            </div>
+          )}
+
           <div className="mt-10 grid gap-4">
             {jobs.map((job) => {
               const salary = formatSalary(job);
@@ -420,7 +546,7 @@ export default function Home() {
                       <p className="mt-2 text-sm text-slate-400">
                         {job.listing_classification}
                         {job.repost_count > 0 ? ` · repost #${job.repost_count}` : ""}
-                        {` · ${job.days_active} days observed`}
+                        {` · ${ageSummary(job)}`}
                         {job.applicant_count != null
                           ? ` · ${job.applicant_count} reported applicants`
                           : ""}

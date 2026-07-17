@@ -691,7 +691,7 @@ async def test_jsearch_uses_cursor_search_v2_for_multiple_pages(monkeypatch):
     from app.core.config import settings
     from app.workers.scrapers.jsearch import JSearchScraper
 
-    monkeypatch.setattr(settings, "rapidapi_key", "test-only")
+    monkeypatch.setattr(settings, "openwebninja_api_key", "test-only")
     scraper = JSearchScraper(max_pages=2)
     calls = []
 

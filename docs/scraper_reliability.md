@@ -28,7 +28,7 @@ reserved buffer:         1,000
 planned daily schedule:  2,170 requests per 31 days
 ```
 
-The budget service also records RapidAPI's request-limit, remaining, and reset headers. Collection stops when provider-reported remaining requests reach the reserve, even when local usage is lower. Redis append-only persistence protects the counter across normal restarts.
+The budget service also records the provider's request-limit, remaining, and reset headers. Collection stops when provider-reported remaining requests reach the reserve, even when local usage is lower. Redis append-only persistence protects the counter across normal restarts.
 
 Configuration validation rejects a scheduled plan that exceeds the protected local budget and rejects simultaneous generic plus targeted JSearch scheduling unless `ALLOW_OVERLAPPING_JSEARCH_SOURCES=true`.
 
@@ -38,7 +38,7 @@ Check status with:
 docker compose exec worker python -m app.scripts.jsearch_quota
 ```
 
-A dedicated RapidAPI key is still required for a strong no-overage guarantee because requests made outside JobLens consume the same provider quota.
+A dedicated OpenWeb Ninja key is recommended because requests made outside JobLens consume the same provider quota.
 
 ## JSearch pagination and attribution
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -15,8 +17,8 @@ router = APIRouter(prefix="/companies", tags=["companies"])
 
 @router.get("/", response_model=list[CompanyOut])
 async def list_companies(
-    q: str | None = None,
-    limit: int = Query(50, ge=1, le=200),
+    q: Annotated[str | None, Query(max_length=100)] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
     db: AsyncSession = Depends(get_db),
 ):
     query = select(Company).order_by(Company.hiring_intensity.desc().nullslast(), Company.name)
@@ -26,7 +28,10 @@ async def list_companies(
 
 
 @router.get("/{company_id}", response_model=CompanyOut)
-async def get_company(company_id: int, db: AsyncSession = Depends(get_db)):
+async def get_company(
+    company_id: Annotated[int, Path(ge=1)],
+    db: AsyncSession = Depends(get_db),
+):
     company = await db.get(Company, company_id)
     if not company:
         raise HTTPException(404, "Company not found")
@@ -35,7 +40,7 @@ async def get_company(company_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.get("/{company_id}/jobs", response_model=list[JobPostingListItem])
 async def company_jobs(
-    company_id: int,
+    company_id: Annotated[int, Path(ge=1)],
     active_only: bool = True,
     collapse_canonical: bool = True,
     db: AsyncSession = Depends(get_db),

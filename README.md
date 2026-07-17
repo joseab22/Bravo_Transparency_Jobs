@@ -16,7 +16,7 @@ The score estimates posting activity. It is not proof of employer intent.
 - Returns one representative card per canonical opening by default and exposes every known board/application URL in `canonical_sources`.
 - Displays linked **Found on** chips in the frontend. Multiple links from one publisher remain accessible and are numbered; direct employer links are marked **Direct**.
 - Enforces a Redis-backed monthly JSearch request budget before every request attempt, including retries.
-- Uses RapidAPI quota-response headers as a second guard and persists counters through Redis AOF storage.
+- Reconciles provider quota-response headers as a second guard and persists counters through Redis AOF storage.
 - Removes per-posting geocoding and model generation from collection. Optional enrichment runs separately.
 
 ## Pipeline
@@ -34,10 +34,10 @@ JSearch /search-v2 → publisher + apply-link attribution ───────�
 
 ## Exact JSearch API-key location
 
-For your Mac repository, put the **rotated RapidAPI key** in exactly:
+Put the **OpenWeb Ninja API key** in:
 
 ```text
-/Users/josebravo/Desktop/Bravo_Transparency_Jobs/backend/.env
+backend/.env
 ```
 
 Or, from the repository root:
@@ -46,16 +46,16 @@ Or, from the repository root:
 backend/.env
 ```
 
-Open it with TextEdit:
+Open it from the repository root with:
 
 ```bash
-open -e ~/Desktop/Bravo_Transparency_Jobs/backend/.env
+open -e backend/.env
 ```
 
 Add or replace this line:
 
 ```env
-RAPIDAPI_KEY=your_rotated_private_key_here
+OPENWEBNINJA_API_KEY=your_openwebninja_key_here
 ```
 
 Do not add quotes or spaces. Do not place the key in `.env.example`, `docker-compose.yml`, source code, screenshots, commits, or GitHub.
@@ -64,7 +64,7 @@ Recommended JSearch Pro settings in the same `backend/.env` file:
 
 ```env
 ENABLED_SCRAPER_SOURCES=simplify,jsearch
-RAPIDAPI_KEY=your_rotated_private_key_here
+OPENWEBNINJA_API_KEY=your_openwebninja_key_here
 
 JSEARCH_PAGES_PER_QUERY=10
 JSEARCH_SCHEDULE_EVERY_HOURS=24
@@ -80,7 +80,7 @@ JSEARCH_EXCLUDED_DOMAINS=simplify.jobs
 ALLOW_OVERLAPPING_JSEARCH_SOURCES=false
 ```
 
-Use a dedicated RapidAPI application/key for JobLens and do not use that key for unrelated manual requests. Requests made outside JobLens still count against the same provider quota.
+Use a dedicated OpenWeb Ninja API key for JobLens and do not use that key for unrelated manual requests. Requests made outside JobLens still count against the same provider quota.
 
 ## JSearch Pro request protection
 
@@ -95,7 +95,7 @@ The code also applies these protections:
 
 1. Every JSearch HTTP attempt reserves one unit in Redis before it is sent. Retries count.
 2. JobLens stops at `10,000 - 1,000 = 9,000` locally counted attempts.
-3. RapidAPI's `x-ratelimit-requests-*` headers are saved and collection stops when provider-reported remaining requests reach the 1,000-request reserve.
+3. OpenWeb Ninja rate-limit headers are saved and collection stops when provider-reported remaining requests reach the 1,000-request reserve.
 4. Configuration validation prevents a scheduled generic JSearch plan whose estimated usage exceeds the protected application budget.
 5. Generic `jsearch` cannot be scheduled together with targeted `linkedin` or `indeed` unless overlap is explicitly enabled.
 6. All JSearch-backed adapters share one provider lock, preventing concurrent generic/targeted runs.
@@ -121,13 +121,13 @@ The migration head should be:
 0006_source_sighting_links
 ```
 
-The backend runs `alembic upgrade head` automatically before FastAPI starts. `alembic current` only verifies the installed revision.
+The one-shot `migrate` service runs `alembic upgrade head` before the backend, worker, and Beat services start. `alembic current` only verifies the installed revision.
 
 Verify the worker received the key without printing it:
 
 ```bash
 docker compose exec worker sh -c \
-  'test -n "$RAPIDAPI_KEY" && echo "RAPIDAPI_KEY is set" || echo "RAPIDAPI_KEY is missing"'
+  'test -n "$OPENWEBNINJA_API_KEY" && echo "OPENWEBNINJA_API_KEY is set" || echo "OPENWEBNINJA_API_KEY is missing"'
 ```
 
 ## Controlled first JSearch test
@@ -256,4 +256,4 @@ npm run lint
 npm run build
 ```
 
-See `docs/sources/jsearch.md`, `docs/source_attribution.md`, `docs/next_steps.md`, `docs/scraper_reliability.md`, and `docs/validation.md`.
+See `docs/ARCHITECTURE.md`, `docs/deployment.md`, `docs/sources/jsearch.md`, `docs/source_attribution.md`, and `docs/scraper_reliability.md`.

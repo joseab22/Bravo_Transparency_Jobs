@@ -19,10 +19,6 @@ from app.workers.scrapers.base import BaseScraperAdapter
 log = structlog.get_logger()
 
 GLASSDOOR_RAPIDAPI_HOST = "glassdoor.p.rapidapi.com"
-RAPIDAPI_HEADERS = {
-    "X-RapidAPI-Key": settings.rapidapi_key,
-    "X-RapidAPI-Host": GLASSDOOR_RAPIDAPI_HOST,
-}
 
 
 class GlassdoorScraper(BaseScraperAdapter):
@@ -38,7 +34,10 @@ class GlassdoorScraper(BaseScraperAdapter):
 
         return await self.request_json(
             f"https://{GLASSDOOR_RAPIDAPI_HOST}/jobs/search",
-            headers=RAPIDAPI_HEADERS,
+            headers={
+                "X-RapidAPI-Key": settings.rapidapi_key,
+                "X-RapidAPI-Host": GLASSDOOR_RAPIDAPI_HOST,
+            },
             params={
                 "keyword": query,
                 "page": str(page),

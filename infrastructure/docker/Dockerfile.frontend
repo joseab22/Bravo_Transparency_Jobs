@@ -1,7 +1,6 @@
-FROM node:20-alpine
+FROM node:20-alpine AS dependencies
 
 ENV NEXT_TELEMETRY_DISABLED=1
-
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -9,12 +8,32 @@ RUN npm ci --no-audit --no-fund \
     && test -x /app/node_modules/.bin/next \
     && npm ls next
 
-COPY . .
+FROM dependencies AS development
 
+ENV NODE_ENV=development
+COPY . .
 RUN mkdir -p /app/.next && chown -R node:node /app
+USER node
+EXPOSE 3000
+CMD ["npm", "run", "dev", "--", "--hostname", "0.0.0.0"]
+
+FROM dependencies AS builder
+
+ENV NODE_ENV=production
+COPY . .
+RUN npm run build
+
+FROM node:20-alpine AS production
+
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
+COPY --from=builder --chown=node:node /app/.next ./.next
+COPY --from=builder --chown=node:node /app/next.config.js ./next.config.js
 
 USER node
-
 EXPOSE 3000
-
-CMD ["npm", "run", "dev", "--", "--hostname", "0.0.0.0"]
+CMD ["npm", "run", "start", "--", "--hostname", "0.0.0.0"]

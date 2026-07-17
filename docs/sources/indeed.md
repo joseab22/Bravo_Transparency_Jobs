@@ -1,6 +1,6 @@
 # Indeed through JSearch
 
-This optional targeted adapter adds `via indeed` to JSearch queries and uses the same `RAPIDAPI_KEY`, cursor pagination, request counter, and publisher parser as generic JSearch.
+This optional targeted adapter adds `via indeed` to JSearch queries and uses the same `OPENWEBNINJA_API_KEY`, cursor pagination, request counter, and publisher parser as generic JSearch.
 
 Returned rows are not blindly labeled Indeed. JobLens uses the response publisher/apply metadata and retains every application option.
 

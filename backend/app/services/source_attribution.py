@@ -113,3 +113,44 @@ async def load_canonical_sources(
         )
         for group_id, values in aggregated.items()
     }
+
+
+def own_sources(job: JobPosting) -> list[dict]:
+    """Return only this row's own publisher sightings — not the wider canonical group."""
+    sightings = list(job.source_sightings)
+    if not sightings:
+        sightings = [SimpleNamespace(
+            source=job.source,
+            publisher_name=job.publisher_name,
+            collection_provider=job.collection_provider,
+            source_url=job.source_url,
+            external_id=job.external_id,
+            sighting_key=f"legacy-{job.id}-{job.source}",
+            is_direct=False,
+            first_seen=job.date_first_seen,
+            last_seen=job.date_last_seen,
+        )]
+
+    deduped: dict[str, dict] = {}
+    for sighting in sightings:
+        key = f"{sighting.source}|{sighting.source_url}" if sighting.source_url else (
+            getattr(sighting, "sighting_key", None) or f"{sighting.source}|"
+        )
+        deduped[key] = {
+            "sighting_key": getattr(sighting, "sighting_key", None) or key,
+            "source": sighting.source,
+            "publisher_name": sighting.publisher_name or sighting.source.replace("-", " ").title(),
+            "collection_provider": sighting.collection_provider,
+            "source_url": sighting.source_url,
+            "external_id": sighting.external_id,
+            "is_direct": bool(getattr(sighting, "is_direct", False)),
+            "first_seen": sighting.first_seen,
+            "last_seen": sighting.last_seen,
+            "is_active": job.is_active,
+            "listing_ids": [job.id],
+        }
+
+    return sorted(
+        deduped.values(),
+        key=lambda item: (_SOURCE_PRIORITY.get(item["source"], 100), item["publisher_name"].lower()),
+    )

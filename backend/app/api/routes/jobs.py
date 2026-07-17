@@ -1,20 +1,22 @@
 from __future__ import annotations
 
 import math
+from datetime import timedelta
 from typing import Annotated, Literal, TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
-from sqlalchemy import asc, desc, func, or_, select
+from sqlalchemy import and_, asc, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.security import require_admin_key
+from app.core.time import utc_now
 from app.db.session import get_db
 from app.models.models import Company, JobPosting, JobSkill, JobSourceSighting
 from app.schemas.jobs import JobPostingDetail, JobPostingListItem, MarketStats, PaginatedJobsResponse
 from app.services.scoring import ScoringService
-from app.services.source_attribution import canonical_group_id, load_canonical_sources
+from app.services.source_attribution import canonical_group_id, load_canonical_sources, own_sources
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 SortField = Literal[
@@ -25,6 +27,7 @@ SortField = Literal[
     "salary_max",
     "applicant_count",
     "date_first_seen",
+    "date_posted",
     "activity_score",
     "competition_score",
 ]
@@ -38,6 +41,7 @@ SORT_COLUMNS = {
     "salary_max": JobPosting.salary_max,
     "applicant_count": JobPosting.applicant_count,
     "date_first_seen": JobPosting.date_first_seen,
+    "date_posted": JobPosting.date_posted,
     "activity_score": JobPosting.activity_score,
     "competition_score": JobPosting.competition_score,
 }
@@ -54,6 +58,7 @@ def _filters(
     q=None, industry=None, job_family=None, job_board=None, classification=None, remote_type=None,
     seniority=None, employment_type=None, metro_area=None, salary_min=None,
     salary_max=None, ghost_max=None, health_min=None, active_hiring_min=None, applicant_max=None,
+    max_age_days=None,
 ):
     values = [JobPosting.is_active.is_(True)]
     if q:
@@ -111,16 +116,30 @@ def _filters(
             JobPosting.applicant_count <= applicant_max,
             JobPosting.applicant_count.is_(None),
         ))
+    if max_age_days is not None:
+        cutoff = utc_now() - timedelta(days=max_age_days)
+        values.append(or_(
+            JobPosting.date_posted >= cutoff,
+            and_(
+                JobPosting.date_posted.is_(None),
+                JobPosting.date_first_seen >= cutoff,
+            ),
+        ))
     return values
 
 
 async def _serialize_jobs(
-    jobs: list[JobPosting], db: AsyncSession, schema: type[SchemaT]
+    jobs: list[JobPosting], db: AsyncSession, schema: type[SchemaT], *, collapse: bool = True
 ) -> list[SchemaT]:
-    source_map = await load_canonical_sources(jobs, db)
+    if collapse:
+        source_map = await load_canonical_sources(jobs, db)
+        sources_by_job = {job.id: source_map.get(canonical_group_id(job), []) for job in jobs}
+    else:
+        sources_by_job = {job.id: own_sources(job) for job in jobs}
+
     return [
         schema.model_validate(job).model_copy(
-            update={"canonical_sources": source_map.get(canonical_group_id(job), [])}
+            update={"canonical_sources": sources_by_job.get(job.id, [])}
         )
         for job in jobs
     ]
@@ -143,6 +162,7 @@ async def list_jobs(
     health_min: Annotated[float | None, Query(ge=0, le=100)] = None,
     active_hiring_min: Annotated[float | None, Query(ge=0, le=100)] = None,
     applicant_max: Annotated[int | None, Query(ge=0, le=1_000_000)] = None,
+    max_age_days: Annotated[int | None, Query(ge=1, le=3650)] = None,
     collapse_canonical: bool = True,
     sort_by: SortField = "active_hiring_confidence",
     sort_dir: SortDirection = "desc",
@@ -153,7 +173,7 @@ async def list_jobs(
     conditions = _filters(
         q, industry, job_family, job_board, classification, remote_type, seniority,
         employment_type, metro_area, salary_min, salary_max, ghost_max,
-        health_min, active_hiring_min, applicant_max,
+        health_min, active_hiring_min, applicant_max, max_age_days,
     )
     column = SORT_COLUMNS[sort_by]
     order = asc(column).nulls_last() if sort_dir == "asc" else desc(column).nulls_last()
@@ -198,7 +218,9 @@ async def list_jobs(
         .offset((page - 1) * page_size)
         .limit(page_size)
     )).scalars().unique())
-    results = await _serialize_jobs(jobs, db, JobPostingListItem)
+    results = await _serialize_jobs(
+        jobs, db, JobPostingListItem, collapse=collapse_canonical
+    )
     return PaginatedJobsResponse(
         total=total,
         page=page,

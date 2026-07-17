@@ -1,6 +1,6 @@
 # LinkedIn through JSearch
 
-This optional targeted adapter adds `via linkedin` to JSearch queries and uses the same `RAPIDAPI_KEY`, cursor pagination, request counter, and publisher parser as generic JSearch. It does not use LinkedIn OAuth credentials.
+This optional targeted adapter adds `via linkedin` to JSearch queries and uses the same `OPENWEBNINJA_API_KEY`, cursor pagination, request counter, and publisher parser as generic JSearch. It does not use LinkedIn OAuth credentials.
 
 Returned rows are not blindly labeled LinkedIn. JobLens uses response publisher/apply metadata and retains every application option.
 

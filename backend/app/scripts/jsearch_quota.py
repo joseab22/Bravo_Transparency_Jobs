@@ -7,7 +7,7 @@ import json
 from app.core.config import settings
 from app.services.request_budget import RapidAPIRequestBudget
 
-
+#Uses legacy terminology of Rapid API, instead of OpenwWeb ninja. 
 async def main() -> None:
     budget = RapidAPIRequestBudget(
         settings.redis_url,

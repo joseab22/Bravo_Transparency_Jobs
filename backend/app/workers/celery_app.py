@@ -73,6 +73,10 @@ beat_schedule.update({
     "expire-stale-jobs": {"task": "joblens.expire_stale_jobs", "schedule": crontab(minute=15, hour=1)},
     "enrich-locations": {"task": "joblens.enrich_locations", "schedule": crontab(minute=35, hour="*")},
     "enrich-embeddings": {"task": "joblens.enrich_embeddings", "schedule": crontab(minute=45, hour="*")},
+    "analyze-hiring-activity": {
+        "task": "joblens.analyze_hiring_activity",
+        "schedule": crontab(minute=50, hour="*/6"),
+    },
 })
 celery_app.conf.beat_schedule = beat_schedule
 
@@ -98,12 +102,27 @@ def release_scrape_lock(key: str, token: str) -> None:
     )
 
 
+def validate_source_credentials(source: str) -> None:
+    """Fail clearly instead of silently returning zero jobs for a missing key."""
+    if source in {"jsearch", "linkedin", "indeed"} and not settings.openwebninja_api_key:
+        raise RuntimeError("OPENWEBNINJA_API_KEY is required for JSearch-backed sources")
+    if source in {"glassdoor", "monster"} and not settings.rapidapi_key:
+        raise RuntimeError("RAPIDAPI_KEY is required for this RapidAPI-backed source")
+    if source == "ziprecruiter" and not settings.ziprecruiter_api_key:
+        raise RuntimeError("ZIPRECRUITER_API_KEY is required for ZipRecruiter")
+    if source == "dice" and not settings.dice_api_key:
+        raise RuntimeError("DICE_API_KEY is required for Dice")
+    if source == "jobright" and not settings.jobright_api_key:
+        raise RuntimeError("JOBRIGHT_API_KEY is required for Jobright")
+
+
 @celery_app.task(name="joblens.scrape_source", bind=True, max_retries=3)
 def task_scrape_source(self, source: str, max_pages: int | None = None):
     source = source.lower()
     scrape_fn = SCRAPER_REGISTRY.get(source)
     if not scrape_fn:
         return {"status": "error", "error": f"Unknown source: {source}"}
+    validate_source_credentials(source)
     # All JSearch-backed adapters share one provider rate/quota lock. This
     # prevents a manual LinkedIn task from overlapping a generic JSearch task.
     lock_scope = "jsearch-provider" if source in {"jsearch", "linkedin", "indeed"} else source
@@ -257,20 +276,3 @@ async def _jsearch_quota_status() -> dict[str, Any]:
         return (await budget.status()).as_dict()
     finally:
         await budget.close()
-
-
-# BEGIN AUTO LEARNING SCHEDULE
-# Add only the missing hiring-activity analysis schedule.
-try:
-    _joblens_celery_app = celery_app
-except NameError:
-    _joblens_celery_app = app
-
-_joblens_celery_app.conf.beat_schedule.update({
-    "joblens-analyze-hiring-activity-every-6-hours": {
-        "task": "joblens.analyze_hiring_activity",
-        "schedule": 60 * 60 * 6,
-    },
-})
-# END AUTO LEARNING SCHEDULE
-

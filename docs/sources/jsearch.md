@@ -4,7 +4,7 @@ The generic `jsearch` adapter is the recommended mode. It searches multiple role
 
 ## Credentials
 
-Put the RapidAPI marketplace key only in:
+Put the OpenWeb Ninja API key only in:
 
 ```text
 backend/.env
@@ -13,14 +13,12 @@ backend/.env
 On Jose's Mac repository, the full path is:
 
 ```text
-/Users/josebravo/Desktop/Bravo_Transparency_Jobs/backend/.env
+backend/.env
 ```
 
 ```env
-RAPIDAPI_KEY=your_rotated_private_key_here
+OPENWEBNINJA_API_KEY=your_openwebninja_key_here
 ```
-
-Never put the value in `.env.example` or commit it.
 
 ## Recommended Pro configuration
 
@@ -29,7 +27,7 @@ ENABLED_SCRAPER_SOURCES=simplify,jsearch
 JSEARCH_PAGES_PER_QUERY=10
 JSEARCH_SCHEDULE_EVERY_HOURS=24
 JSEARCH_MONTHLY_REQUEST_LIMIT=10000
-JSEARCH_REQUEST_RESERVE=1000
+JSEARCH_REQUEST_RESERVE=1400
 JSEARCH_QUERIES=software engineer,data analyst,data engineer,data scientist,machine learning engineer,product manager,security engineer
 JSEARCH_COUNTRY=us
 JSEARCH_LANGUAGE=en
@@ -40,7 +38,6 @@ JSEARCH_EXCLUDED_DOMAINS=simplify.jobs
 ALLOW_OVERLAPPING_JSEARCH_SOURCES=false
 ```
 
-The default schedule plans 2,170 requests in a 31-day month. All JSearch-backed attempts, including retries and manual tasks launched through JobLens, stop at 9,000. Provider quota headers provide a second guard.
 
 ## Pagination
 
