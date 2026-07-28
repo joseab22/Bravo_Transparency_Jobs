@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -58,6 +58,25 @@ class JobEventOut(ORMModel):
     payload: Optional[dict] = None
 
 
+class ScoreComponentOut(BaseModel):
+    key: str
+    label: str
+    points: float
+    maximum: Optional[float] = None
+    tone: Literal["positive", "neutral", "negative"] = "neutral"
+    detail: str
+
+
+class ActiveHiringReasoningOut(BaseModel):
+    score: float
+    label: str
+    summary: str
+    formula: str
+    components: list[ScoreComponentOut] = Field(default_factory=list)
+    signals: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+
+
 class CompanyOut(ORMModel):
     id: int
     name: str
@@ -106,6 +125,7 @@ class JobPostingListItem(ORMModel):
     ghost_confidence: Optional[float] = None
     health_score: Optional[float] = None
     active_hiring_confidence: Optional[float] = None
+    active_hiring_reasoning: Optional[ActiveHiringReasoningOut] = None
     competition_score: Optional[float] = None
     interview_opportunity_score: Optional[float] = None
     salary_fairness_score: Optional[float] = None

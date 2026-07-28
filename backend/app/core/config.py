@@ -56,7 +56,8 @@ class Settings(BaseSettings):
     jsearch_language: str = "en"
     jsearch_location: str = "United States"
     jsearch_excluded_publishers: str = "simplify,simplifyjobs,simplify jobs"
-    jsearch_excluded_domains: str = "simplify.jobs"
+    # Keep blank for direct OpenWeb Ninja searches; filter Simplify after retrieval.
+    jsearch_excluded_domains: str = ""
     allow_overlapping_jsearch_sources: bool = False
     ingest_batch_size: int = Field(default=250, ge=1, le=5000)
     snapshot_min_interval_hours: int = Field(default=24, ge=0, le=720)

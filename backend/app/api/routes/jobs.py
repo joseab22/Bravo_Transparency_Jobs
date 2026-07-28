@@ -14,7 +14,7 @@ from app.core.security import require_admin_key
 from app.core.time import utc_now
 from app.db.session import get_db
 from app.models.models import Company, JobPosting, JobSkill, JobSourceSighting
-from app.schemas.jobs import JobPostingDetail, JobPostingListItem, MarketStats, PaginatedJobsResponse
+from app.schemas.jobs import ActiveHiringReasoningOut, JobPostingDetail, JobPostingListItem, MarketStats, PaginatedJobsResponse
 from app.services.scoring import ScoringService
 from app.services.source_attribution import canonical_group_id, load_canonical_sources, own_sources
 
@@ -129,20 +129,44 @@ def _filters(
 
 
 async def _serialize_jobs(
-    jobs: list[JobPosting], db: AsyncSession, schema: type[SchemaT], *, collapse: bool = True
+    jobs: list[JobPosting],
+    db: AsyncSession,
+    schema: type[SchemaT],
+    *,
+    collapse: bool = True,
+    max_age_days: int | None = None,
 ) -> list[SchemaT]:
     if collapse:
-        source_map = await load_canonical_sources(jobs, db)
+        source_map = await load_canonical_sources(
+            jobs,
+            db,
+            max_age_days=max_age_days,
+        )
         sources_by_job = {job.id: source_map.get(canonical_group_id(job), []) for job in jobs}
     else:
         sources_by_job = {job.id: own_sources(job) for job in jobs}
 
-    return [
-        schema.model_validate(job).model_copy(
-            update={"canonical_sources": sources_by_job.get(job.id, [])}
+    serialized: list[SchemaT] = []
+    for job in jobs:
+        canonical_sources = sources_by_job.get(job.id, [])
+        reasoning_data = ScoringService.active_hiring_reasoning(
+            job,
+            source_count=len(canonical_sources),
         )
-        for job in jobs
-    ]
+        reasoning = (
+            ActiveHiringReasoningOut.model_validate(reasoning_data)
+            if reasoning_data is not None
+            else None
+        )
+        serialized.append(
+            schema.model_validate(job).model_copy(
+                update={
+                    "canonical_sources": canonical_sources,
+                    "active_hiring_reasoning": reasoning,
+                }
+            )
+        )
+    return serialized
 
 
 @router.get("/", response_model=PaginatedJobsResponse)
@@ -219,7 +243,11 @@ async def list_jobs(
         .limit(page_size)
     )).scalars().unique())
     results = await _serialize_jobs(
-        jobs, db, JobPostingListItem, collapse=collapse_canonical
+        jobs,
+        db,
+        JobPostingListItem,
+        collapse=collapse_canonical,
+        max_age_days=max_age_days,
     )
     return PaginatedJobsResponse(
         total=total,

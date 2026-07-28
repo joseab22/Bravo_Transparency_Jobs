@@ -257,6 +257,102 @@ def test_scoring_weights_validate():
     with pytest.raises(ValueError):
         Settings(_env_file=None, ghost_job_repost_weight=0.9)
 
+
+def test_active_hiring_reasoning_matches_score_formula():
+    from app.services.scoring import ScoringService
+
+    job = SimpleNamespace(
+        active_hiring_confidence=79.0,
+        ghost_job_probability=0.20,
+        activity_score=70.0,
+        ghost_confidence=0.50,
+        listing_classification="parallel",
+        is_active=True,
+        days_active=10,
+        repost_count=0,
+        salary_listed=True,
+        applicant_count=42,
+    )
+
+    reasoning = ScoringService.active_hiring_reasoning(job, source_count=2)
+
+    assert reasoning is not None
+    assert reasoning["score"] == 79.0
+    assert [item["points"] for item in reasoning["components"]] == [48.0, 21.0, 5.0, 5.0]
+    assert reasoning["label"] == "Higher confidence"
+    assert reasoning["components"][0]["label"] == "Posting reliability"
+    assert "Strong signs of active hiring" not in reasoning["summary"]
+    assert "Good signs of active hiring" in reasoning["summary"]
+    assert any("2 source listings" in signal for signal in reasoning["signals"])
+    assert "Lower estimated risk contributes" not in str(reasoning)
+    assert "—" not in str(reasoning)
+
+
+def test_active_hiring_reasoning_reports_penalties_and_missing_data():
+    from app.services.scoring import ScoringService
+
+    job = SimpleNamespace(
+        active_hiring_confidence=12.0,
+        ghost_job_probability=0.75,
+        activity_score=30.0,
+        ghost_confidence=0.30,
+        listing_classification="repost",
+        is_active=False,
+        days_active=120,
+        repost_count=3,
+        salary_listed=False,
+        applicant_count=None,
+    )
+
+    reasoning = ScoringService.active_hiring_reasoning(job, source_count=1)
+
+    assert reasoning is not None
+    points = {item["key"]: item["points"] for item in reasoning["components"]}
+    assert points["listing_pattern"] == -8.0
+    assert points["inactive"] == -25.0
+    assert reasoning["label"] == "Lower confidence"
+    assert "Limited signs of active hiring" in reasoning["summary"]
+    assert any("Applicant count was not available" in item for item in reasoning["limitations"])
+    assert "—" not in str(reasoning)
+
+
+
+def test_active_hiring_reasoning_explains_mixed_signals_plainly():
+    from app.services.scoring import ScoringService
+
+    job = SimpleNamespace(
+        active_hiring_confidence=55.3,
+        ghost_job_probability=0.35,
+        activity_score=68.7,
+        ghost_confidence=0.38,
+        listing_classification="repost",
+        is_active=True,
+        days_active=52,
+        repost_count=1,
+        salary_listed=False,
+        applicant_count=None,
+    )
+
+    reasoning = ScoringService.active_hiring_reasoning(job, source_count=1)
+
+    assert reasoning is not None
+    assert "Some positive signals, but meaningful uncertainty" in reasoning["summary"]
+    assert "repost history" in reasoning["summary"].lower()
+    assert "limited supporting evidence" in reasoning["summary"].lower()
+    listing = next(item for item in reasoning["components"] if item["key"] == "listing_pattern")
+    assert "continued recruiting" in listing["detail"]
+    assert "recycled or remained unfilled" in listing["detail"]
+    assert "—" not in str(reasoning)
+
+
+def test_active_hiring_reasoning_is_none_for_unscored_job():
+    from app.services.scoring import ScoringService
+
+    assert ScoringService.active_hiring_reasoning(
+        SimpleNamespace(active_hiring_confidence=None),
+        source_count=1,
+    ) is None
+
 @pytest.mark.asyncio
 async def test_ingestion_preserves_parallel_stable_ids(tmp_path):
     from sqlalchemy import func, select

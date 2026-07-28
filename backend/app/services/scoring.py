@@ -107,15 +107,248 @@ class ScoringService:
         return min(100.0, recency * 0.65 + sibling_signal + snapshot_signal)
 
     @staticmethod
-    def _active_hiring_confidence(job: JobPosting, ghost: float, activity: float, data_confidence: float) -> float:
-        score = (1 - ghost) * 60 + activity * 0.30 + data_confidence * 10
-        if job.listing_classification == "parallel":
-            score += 5
-        elif job.listing_classification == "repost":
-            score -= 8
+    def _active_hiring_components(
+        job: JobPosting,
+        ghost: float,
+        activity: float,
+        data_confidence: float,
+    ) -> dict[str, float]:
+        classification = (job.listing_classification or "original").lower()
+        return {
+            "posting_health": (1.0 - ghost) * 60.0,
+            "activity": activity * 0.30,
+            "evidence": data_confidence * 10.0,
+            "listing_pattern": 5.0 if classification == "parallel" else -8.0 if classification == "repost" else 0.0,
+            "availability": 0.0 if job.is_active else -25.0,
+        }
+
+    @classmethod
+    def _active_hiring_confidence(
+        cls,
+        job: JobPosting,
+        ghost: float,
+        activity: float,
+        data_confidence: float,
+    ) -> float:
+        components = cls._active_hiring_components(job, ghost, activity, data_confidence)
+        return max(0.0, min(sum(components.values()), 100.0))
+
+    @staticmethod
+    def active_hiring_reasoning(job: JobPosting, *, source_count: int | None = None) -> Optional[dict]:
+        """Explain an existing Active Hiring Confidence score without rescoring.
+
+        The explanation mirrors ``_active_hiring_confidence`` and translates the
+        stored inputs into plain language. It does not create a second score or
+        require additional database writes.
+        """
+        if job.active_hiring_confidence is None:
+            return None
+
+        def join_items(items: list[str]) -> str:
+            if not items:
+                return ""
+            if len(items) == 1:
+                return items[0]
+            if len(items) == 2:
+                return f"{items[0]} and {items[1]}"
+            return f"{', '.join(items[:-1])}, and {items[-1]}"
+
+        ghost = float(job.ghost_job_probability if job.ghost_job_probability is not None else 0.5)
+        activity = float(job.activity_score if job.activity_score is not None else 0.0)
+        evidence = float(job.ghost_confidence if job.ghost_confidence is not None else 0.0)
+        classification = (job.listing_classification or "original").lower()
+        score_components = ScoringService._active_hiring_components(job, ghost, activity, evidence)
+
+        health_points = score_components["posting_health"]
+        activity_points = score_components["activity"]
+        evidence_points = score_components["evidence"]
+        listing_adjustment = score_components["listing_pattern"]
+        active_adjustment = score_components["availability"]
+        days_active = int(job.days_active or 0)
+        risk_percent = ghost * 100
+        evidence_percent = evidence * 100
+
+        if ghost < 0.25:
+            health_interpretation = "JobLens found few warning signs associated with stale or repeatedly recycled listings."
+        elif ghost < 0.50:
+            health_interpretation = "JobLens found some warning signs, but the posting is not in the highest risk range."
+        else:
+            health_interpretation = "JobLens found several warning signs associated with stale or repeatedly recycled listings."
+
+        if activity >= 75:
+            activity_interpretation = "This is a strong signal that the employer may be recruiting now."
+        elif activity >= 45:
+            activity_interpretation = "There is some current activity, but it is not as strong or consistent as higher scoring postings."
+        else:
+            activity_interpretation = "Current activity signals are limited, which makes immediate hiring less certain."
+
+        if evidence >= 0.70:
+            evidence_interpretation = "The score is supported by several observations or supporting data fields."
+        elif evidence >= 0.40:
+            evidence_interpretation = "The score has some supporting evidence, but important information is still missing."
+        else:
+            evidence_interpretation = "The score is based on limited supporting evidence, so it should be treated with more caution."
+
+        components = [
+            {
+                "key": "posting_health",
+                "label": "Posting reliability",
+                "points": round(health_points, 1),
+                "maximum": 60.0,
+                "tone": "positive" if ghost < 0.35 else "negative" if ghost >= 0.60 else "neutral",
+                "detail": (
+                    f"Estimated stale or recycled listing risk is {risk_percent:.0f}%. "
+                    f"{health_interpretation} The estimate considers posting age, repost history, "
+                    "salary disclosure, applicant count and company rating when available, and similar listings from the same employer."
+                ),
+            },
+            {
+                "key": "activity",
+                "label": "Recent hiring activity",
+                "points": round(activity_points, 1),
+                "maximum": 30.0,
+                "tone": "positive" if activity >= 65 else "negative" if activity < 35 else "neutral",
+                "detail": (
+                    f"Activity is {activity:.0f}/100. JobLens considers how recently the role appeared, "
+                    "whether related listings are active, and whether the posting has been observed more than once. "
+                    f"{activity_interpretation}"
+                ),
+            },
+            {
+                "key": "evidence",
+                "label": "Strength of evidence",
+                "points": round(evidence_points, 1),
+                "maximum": 10.0,
+                "tone": "positive" if evidence >= 0.65 else "negative" if evidence < 0.35 else "neutral",
+                "detail": (
+                    f"Evidence confidence is {evidence_percent:.0f}%. {evidence_interpretation} "
+                    "Evidence can include repeated observations, compensation data, applicant counts, company data, and related listings. "
+                    "This measures how well supported the score is, not whether the employer has guaranteed an interview."
+                ),
+            },
+        ]
+
+        if listing_adjustment:
+            components.append({
+                "key": "listing_pattern",
+                "label": "Listing history",
+                "points": listing_adjustment,
+                "maximum": None,
+                "tone": "positive" if listing_adjustment > 0 else "negative",
+                "detail": (
+                    "JobLens found multiple active listings that appear to represent separate openings for the same role. "
+                    "This adds 5 points because simultaneous openings can indicate team, location, or volume hiring."
+                    if listing_adjustment > 0
+                    else "The role appeared again after an earlier listing. A repost can mean continued recruiting, but it can also mean "
+                    "the opening was recycled or remained unfilled, so 8 points are removed."
+                ),
+            })
+
+        if active_adjustment:
+            components.append({
+                "key": "inactive",
+                "label": "Current availability",
+                "points": active_adjustment,
+                "maximum": None,
+                "tone": "negative",
+                "detail": "JobLens currently marks this listing inactive, so 25 points are removed.",
+            })
+
+        signals: list[str] = []
         if not job.is_active:
-            score -= 25
-        return max(0.0, min(score, 100.0))
+            signals.append("The listing is currently marked inactive in JobLens.")
+        elif days_active <= 14:
+            signals.append(f"The role was posted or first observed {days_active} day{'s' if days_active != 1 else ''} ago, which is recent.")
+        elif days_active >= 90:
+            signals.append(f"The listing has been visible for {days_active} days, which can increase uncertainty if other activity signals are weak.")
+        else:
+            signals.append(f"The listing has been tracked for {days_active} days and is still marked active.")
+
+        if source_count and source_count > 1:
+            signals.append(f"The same role was found in {source_count} source listings, providing cross source support.")
+        elif source_count == 1:
+            signals.append("The role has been found through one source listing so far.")
+
+        if job.repost_count:
+            signals.append(f"JobLens detected {job.repost_count} prior occurrence{'s' if job.repost_count != 1 else ''} of this role.")
+        elif classification == "parallel":
+            signals.append("Related openings appear to be active at the same time.")
+        else:
+            signals.append("No repost history is currently recorded.")
+
+        if job.salary_listed:
+            signals.append("The employer disclosed compensation in the listing.")
+        if job.applicant_count is not None:
+            signals.append(f"Reported applicant count: {job.applicant_count:,}.")
+        company_rating = getattr(getattr(job, "company", None), "glassdoor_rating", None)
+        if company_rating is not None:
+            signals.append(f"Company rating data is available: {company_rating:.1f}/5.")
+
+        limitations: list[str] = []
+        if job.applicant_count is None:
+            limitations.append("Applicant count was not available, so it could not support the estimate.")
+        if not job.salary_listed:
+            limitations.append("Compensation was not listed, reducing the available transparency evidence.")
+        if not source_count or source_count <= 1:
+            limitations.append("Only one source listing has been observed, so cross source support is limited.")
+        limitations.append(
+            "The score estimates hiring activity from observable posting behavior. It cannot confirm that the employer is interviewing or will fill the role."
+        )
+
+        score = float(job.active_hiring_confidence)
+        label = "Higher confidence" if score >= 70 else "Mixed signals" if score >= 45 else "Lower confidence"
+
+        positive_factors: list[str] = []
+        if ghost < 0.25:
+            positive_factors.append("low estimated stale listing risk")
+        if activity >= 75:
+            positive_factors.append("strong recent activity")
+        if evidence >= 0.70:
+            positive_factors.append("strong supporting evidence")
+        if classification == "parallel":
+            positive_factors.append("multiple related openings")
+        if source_count and source_count > 1:
+            positive_factors.append("cross source support")
+
+        concern_factors: list[str] = []
+        if not job.is_active:
+            concern_factors.append("inactive status")
+        if classification == "repost":
+            concern_factors.append("repost history")
+        if ghost >= 0.35:
+            concern_factors.append("elevated stale listing risk")
+        if activity < 60:
+            concern_factors.append("weaker recent activity")
+        if evidence < 0.50:
+            concern_factors.append("limited supporting evidence")
+        if days_active >= 90:
+            concern_factors.append("a long- unning listing")
+
+        if score >= 85:
+            reason = join_items(positive_factors[:3]) or "several positive hiring signals"
+            summary = f"Strong signs of active hiring. Positive signals include {reason}."
+        elif score >= 70:
+            reason = join_items(positive_factors[:2]) or "mostly positive posting and activity signals"
+            summary = f"Good signs of active hiring. The strongest signals are {reason}, although some information may still be limited."
+        elif score >= 45:
+            reason = join_items(concern_factors[:3]) or "incomplete or conflicting evidence"
+            summary = f"Some positive signals, but meaningful uncertainty. {reason.capitalize()} reduce confidence in immediate hiring."
+        else:
+            reason = join_items(concern_factors[:3]) or "limited evidence of current hiring activity"
+            summary = f"Limited signs of active hiring. The main concerns are {reason}. Verify the role on the employer's careers page before relying on the listing."
+
+        return {
+            "score": round(score, 1),
+            "label": label,
+            "summary": summary,
+            "formula": (
+                "Posting reliability contributes up to 60 points, recent activity up to 30, and evidence strength up to 10. "
+                "Listing history and inactive status can add or subtract points."
+            ),
+            "components": components,
+            "signals": signals,
+            "limitations": limitations,
+        }
 
     async def _salary_fairness(self, job: JobPosting, db: AsyncSession) -> tuple[Optional[float], Optional[int]]:
         result = await db.execute(

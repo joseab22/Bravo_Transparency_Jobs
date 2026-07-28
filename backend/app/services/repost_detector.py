@@ -15,12 +15,14 @@ from app.core.config import settings
 from app.core.time import utc_now
 from app.models.models import JobPosting, RepostEvent
 from app.services.normalizer import (
+    IDENTITY_DEFINING_SPECIALIZATIONS,
     build_identity_fingerprint,
     build_job_identity_key,
     decompose_title,
     locations_in_same_cluster,
     normalize_company_name,
     normalize_location_text,
+    specialization_sets_conflict,
 )
 
 log = structlog.get_logger()
@@ -95,19 +97,72 @@ def _work_arrangement_compatible(a: JobPosting, b: JobPosting) -> bool:
     return True
 
 
+def _same_source_requisition(a: JobPosting, b: JobPosting) -> bool:
+    """Return True only when provider identifiers point to the same requisition."""
+    first_url = (getattr(a, "source_url", None) or "").strip()
+    second_url = (getattr(b, "source_url", None) or "").strip()
+    if first_url and second_url and first_url == second_url:
+        return True
+
+    first_external = (getattr(a, "external_id", None) or "").strip()
+    second_external = (getattr(b, "external_id", None) or "").strip()
+    if not first_external or first_external != second_external:
+        return False
+
+    first_provider = (
+        getattr(a, "collection_provider", None)
+        or getattr(a, "source", None)
+        or ""
+    )
+    second_provider = (
+        getattr(b, "collection_provider", None)
+        or getattr(b, "source", None)
+        or ""
+    )
+    return bool(first_provider and first_provider == second_provider)
+
+
+def _specific_location(job: JobPosting) -> str:
+    """Prefer the named posting location over a broader metro bucket."""
+    city = (getattr(job, "city", None) or "").strip()
+    state = (getattr(job, "state", None) or "").strip()
+    if city:
+        return (normalize_location_text(
+            ", ".join(part for part in (city, state) if part)
+        ) or "").lower()
+    return (normalize_location_text(getattr(job, "location_raw", None)) or "").lower()
+
+
 def _locations_compatible(a: JobPosting, b: JobPosting, *, parallel: bool) -> bool:
     if not _work_arrangement_compatible(a, b):
         return False
     if a.remote_type == b.remote_type == "Remote":
         return True
-    if parallel:
-        # Simultaneous regional advertisements can represent one requisition.
+    if _same_source_requisition(a, b):
         return True
+
+    exact_left = _specific_location(a)
+    exact_right = _specific_location(b)
+
+    if parallel:
+        # Simultaneous onsite openings with different named locations are
+        # separate requisitions, even when both locations belong to the same
+        # broader metro area.
+        if exact_left and exact_right:
+            return exact_left == exact_right
+        metro_left = (normalize_location_text(a.metro_area) or "").lower()
+        metro_right = (normalize_location_text(b.metro_area) or "").lower()
+        return bool(metro_left and metro_right and metro_left == metro_right)
+
+    # A later repost may move within a local hiring area after the earlier
+    # requisition closes, so proximity remains useful only for repost matching.
     if locations_in_same_cluster(a.latitude, a.longitude, b.latitude, b.longitude):
         return True
-    left = (normalize_location_text(a.metro_area or a.location_raw) or "").lower()
-    right = (normalize_location_text(b.metro_area or b.location_raw) or "").lower()
-    return bool(left and right and left == right)
+    if exact_left and exact_right:
+        return exact_left == exact_right
+    metro_left = (normalize_location_text(a.metro_area) or "").lower()
+    metro_right = (normalize_location_text(b.metro_area) or "").lower()
+    return bool(metro_left and metro_right and metro_left == metro_right)
 
 
 def _posted_at(job: JobPosting) -> datetime:
@@ -135,22 +190,52 @@ class RepostDetectionService:
             return False
 
         spec_a, spec_b = _specialty_set(new_job), _specialty_set(old_job)
-        if spec_a and spec_b and spec_a.isdisjoint(spec_b):
+        if specialization_sets_conflict(spec_a, spec_b):
             return False
 
-        title_sim = title_similarity(new_job.title_normalized, old_job.title_normalized)
+        # Compare the original titles as well as the normalized family. The
+        # normalized titles may both be "software engineer" even when the raw
+        # titles identify different requisitions.
+        normalized_title_sim = title_similarity(
+            new_job.title_normalized, old_job.title_normalized
+        )
+        raw_title_sim = lexical_title_similarity(
+            getattr(new_job, "title_raw", new_job.title_normalized),
+            getattr(old_job, "title_raw", old_job.title_normalized),
+        )
         desc_sim = _description_similarity(new_job, old_job)
+
         if family_a and family_b:
             if bool(spec_a) != bool(spec_b):
-                return title_sim >= max(settings.similarity_threshold, 0.90) or (
-                    desc_sim is not None
-                    and desc_sim >= settings.description_similarity_threshold
-                    and title_sim >= 0.75
+                specialized = spec_a or spec_b
+                has_identity_defining_tag = bool(
+                    specialized.intersection(IDENTITY_DEFINING_SPECIALIZATIONS)
                 )
-            if desc_sim is not None and desc_sim < settings.description_similarity_threshold and title_sim < 0.75:
+                if has_identity_defining_tag:
+                    # A generic title must not absorb a specialized title based
+                    # only on their shared broad family. Permit the match only
+                    # when both the raw title and description provide strong
+                    # independent evidence.
+                    return (
+                        raw_title_sim >= 0.88
+                        and desc_sim is not None
+                        and desc_sim >= settings.description_similarity_threshold
+                    )
+                return raw_title_sim >= 0.90
+
+            if spec_a and spec_b and spec_a.isdisjoint(spec_b):
+                # Disjoint non-conflicting tags are still insufficient on their
+                # own; require very similar raw titles and descriptions.
+                return (
+                    raw_title_sim >= 0.90
+                    and desc_sim is not None
+                    and desc_sim >= settings.description_similarity_threshold
+                )
+
+            if desc_sim is not None and desc_sim < settings.description_similarity_threshold and raw_title_sim < 0.75:
                 return False
-            return True
-        if title_sim < settings.similarity_threshold:
+            return raw_title_sim >= 0.72 or normalized_title_sim >= settings.similarity_threshold
+        if normalized_title_sim < settings.similarity_threshold:
             return False
         return desc_sim is None or desc_sim >= settings.description_similarity_threshold
 

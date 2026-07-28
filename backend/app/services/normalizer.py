@@ -154,23 +154,85 @@ SENIORITY_PATTERNS: list[tuple[str, str]] = [
 ]
 
 FAMILY_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
-    ("machine learning engineer", (r"\b(machine learning|ml|ai) (engineer|developer)\b", r"\bmlops engineer\b")),
-    ("data scientist", (r"\bdata scientist\b", r"\bapplied scientist\b", r"\bresearch scientist\b")),
-    ("data engineer", (r"\bdata engineer\b", r"\banalytics engineer\b", r"\betl developer\b")),
-    ("data analyst", (r"\bdata analyst\b", r"\banalytics analyst\b", r"\bbi analyst\b", r"\bbusiness intelligence analyst\b")),
-    ("business analyst", (r"\bbusiness analyst\b", r"\bsystems analyst\b")),
-    ("site reliability engineer", (r"\bsite reliability engineer\b", r"\bsre\b")),
-    ("devops engineer", (r"\bdevops\b", r"\bbuild and release engineer\b", r"\brelease engineer\b")),
-    ("security engineer", (r"\b(cyber ?security|information security|application security|security) (engineer|analyst)\b",)),
+    # Keep role-defining families ahead of broader software/data patterns.
+    ("forward deployed engineer", (
+        r"\bforward[ -]?deployed(?: software)? engineer\b",
+    )),
+    ("machine learning engineer", (
+        r"\b(machine learning|ml|ai) (engineer|developer)\b",
+        r"\bmlops engineer\b",
+    )),
+    ("quantitative researcher", (
+        r"\bquant(?:itative)? researcher\b",
+        r"\bquant(?:itative)? research (?:analyst|engineer|scientist)\b",
+        r"\bquant research(?:er| analyst| engineer| scientist)?\b",
+    )),
+    ("quantitative developer", (
+        r"\bquant(?:itative)? developer\b",
+        r"\bquant(?:itative)? strategy developer\b",
+    )),
+    ("quantitative trader", (
+        r"\bquant(?:itative)? (?:systematic )?(?:trader|trading)\b",
+        r"\bquant(?:itative)? trading analyst\b",
+        r"\balgorithmic trader\b",
+        r"\bsystematic (?:trader|trading)\b",
+    )),
+    ("quantitative analyst", (
+        r"\bquant(?:itative)? (?:finance )?analyst\b",
+        r"\bquantitative finance analyst\b",
+        r"\bquantitative strategist\b",
+    )),
+    ("data scientist", (
+        r"\bdata scientist\b",
+        r"\bapplied scientist\b",
+        r"\bresearch scientist\b",
+    )),
+    ("data engineer", (
+        r"\bdata engineer\b",
+        r"\banalytics engineer\b",
+        r"\betl developer\b",
+    )),
+    ("data analyst", (
+        r"\bdata analyst\b",
+        r"\banalytics analyst\b",
+        r"\bbi analyst\b",
+        r"\bbusiness intelligence analyst\b",
+    )),
+    ("business systems analyst", (
+        r"\bbusiness systems? analyst\b",
+    )),
+    ("business analyst", (
+        r"\bbusiness analyst\b",
+        r"\bsystems analyst\b",
+    )),
+    ("site reliability engineer", (
+        r"\bsite reliability engineer\b",
+        r"\bsre\b",
+    )),
+    ("devops engineer", (
+        r"\bdevops\b",
+        r"\bbuild and release engineer\b",
+        r"\brelease engineer\b",
+    )),
+    ("security engineer", (
+        r"\b(cyber ?security|information security|application security|security) (engineer|analyst)\b",
+    )),
     ("cloud engineer", (r"\bcloud (engineer|developer)\b",)),
     ("solutions architect", (r"\b(solution|solutions|enterprise) architect\b",)),
     ("data architect", (r"\bdata architect\b",)),
-    ("software engineer", (
-        r"\bsoftware (engineer|developer)\b", r"\b(swe|sde)\b",
-        r"\b(back[ -]?end|front[ -]?end|full[ -]?stack|platform|infrastructure) (engineer|developer)\b",
-        r"\bapplication developer\b", r"\bweb developer\b",
+    ("web developer", (
+        r"\bweb (developer|engineer)\b",
     )),
-    ("qa engineer", (r"\b(qa|quality assurance|test automation|software test) (engineer|analyst)\b", r"\bsdet\b")),
+    ("software engineer", (
+        r"\bsoftware (engineer|developer)\b",
+        r"\b(swe|sde)\b",
+        r"\b(back[ -]?end|front[ -]?end|full[ -]?stack|platform|infrastructure) (engineer|developer)\b",
+        r"\bapplication developer\b",
+    )),
+    ("qa engineer", (
+        r"\b(qa|quality assurance|test automation|software test) (engineer|analyst)\b",
+        r"\bsdet\b",
+    )),
     ("product manager", (r"\bproduct manager\b", r"\btechnical product manager\b")),
     ("technical program manager", (r"\btechnical program manager\b", r"\btpm\b")),
     ("program manager", (r"\bprogram manager\b",)),
@@ -179,36 +241,214 @@ FAMILY_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
     ("systems administrator", (r"\b(system|systems) administrator\b", r"\bsysadmin\b")),
     ("database administrator", (r"\bdatabase administrator\b", r"\bdba\b")),
     ("network engineer", (r"\bnetwork engineer\b",)),
-    ("quantitative analyst", (r"\bquant(itative)? (analyst|researcher|developer)\b",)),
 ]
 
 SPECIALTY_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
-    ("tech_lead", (r"(?:-|\(|,)\s*lead\b", r"\btech(nical)? lead\b")),
-    ("admin", (r"\badmin(istration|istrator)?\b", r"\bsalesforce\b")),
+    # Leadership and operating focus
+    ("tech_lead", (r"(?:-|\(|,)\s*lead\b", r"\btech(?:nical)? lead\b")),
+    ("admin", (r"\badmin(?:istration|istrator)?\b",)),
+
+    # Application layer and architecture
+    ("forward_deployed", (r"\bforward[ -]?deployed\b",)),
     ("backend", (r"\bback[ -]?end\b", r"\bserver[ -]?side\b")),
-    ("frontend", (r"\bfront[ -]?end\b", r"\bclient[ -]?side\b", r"\breact\b")),
+    ("frontend", (r"\bfront[ -]?end\b", r"\bclient[ -]?side\b", r"\breact(?:\.js)?\b")),
     ("fullstack", (r"\bfull[ -]?stack\b",)),
+    ("web", (r"\bweb\b",)),
+    ("api", (r"\bapi(?:s)?\b", r"\bgraphql\b", r"\brest(?:ful)?\b")),
     ("platform", (r"\bplatform\b",)),
     ("infrastructure", (r"\binfrastructure\b", r"\binfra\b")),
-    ("cloud", (r"\bcloud\b", r"\baws\b", r"\bazure\b", r"\bgcp\b")),
-    ("security", (r"\bsecurity\b", r"\bcyber\b")),
-    ("devops", (r"\bdevops\b", r"\bci/cd\b", r"\bkubernetes\b")),
+    ("distributed_systems", (r"\bdistributed systems?\b",)),
+    ("microservices", (r"\bmicro[ -]?services?\b",)),
+
+    # Cloud, reliability, and delivery
+    ("cloud", (r"\bcloud\b", r"\baws\b", r"\bazure\b", r"\bgcp\b", r"\bgoogle cloud\b")),
+    ("devops", (r"\bdevops\b", r"\bci[ /-]?cd\b", r"\bkubernetes\b", r"\bk8s\b")),
+    ("site_reliability", (r"\bsite reliability\b", r"\bsre\b")),
+
+    # Mobile and client platforms
     ("mobile", (r"\bmobile\b",)),
-    ("ios", (r"\bios\b", r"\bswift\b")),
-    ("android", (r"\bandroid\b", r"\bkotlin\b")),
+    ("ios", (r"\bios\b", r"\biphone\b", r"\bipad\b")),
+    ("android", (r"\bandroid\b",)),
+
+    # AI, machine learning, and data
     ("ml", (r"\bmachine learning\b", r"\bml\b", r"\bartificial intelligence\b", r"\bai\b")),
-    ("data", (r"\bdata\b", r"\betl\b")),
-    ("analytics", (r"\banalytics\b", r"\bbusiness intelligence\b")),
-    ("quality", (r"\bqa\b", r"\bquality\b", r"\btest automation\b")),
+    ("mlops", (r"\bmlops\b", r"\bmachine learning platform\b")),
+    ("generative_ai", (r"\bgenerative ai\b", r"\bgen[ -]?ai\b", r"\bllm(?:s)?\b", r"\blarge language models?\b")),
+    ("nlp", (r"\bnlp\b", r"\bnatural language processing\b")),
+    ("computer_vision", (r"\bcomputer vision\b", r"\bvision\b")),
+    ("data", (r"\bdata\b", r"\betl\b", r"\belt\b")),
+    ("data_platform", (r"\bdata platform\b", r"\bdata infrastructure\b")),
+    ("analytics", (r"\banalytics\b", r"\bbusiness intelligence\b", r"\bbi\b")),
+    ("business_systems", (r"\bbusiness systems?\b",)),
+    ("quant_research", (
+        r"\bquant(?:itative)? research(?:er| analyst| engineer| scientist)?\b",
+        r"\bquant(?:itative)? researcher\b",
+    )),
+    ("quant_development", (
+        r"\bquant(?:itative)? developer\b",
+        r"\bquant(?:itative)? strategy developer\b",
+    )),
+    ("quant_trading", (
+        r"\bquant(?:itative)? (?:systematic )?(?:trader|trading)\b",
+        r"\bquant(?:itative)? trading analyst\b",
+        r"\balgorithmic trader\b",
+    )),
+    ("database", (r"\bdatabase\b", r"\bdb\b", r"\bsql\b")),
+
+    # Security and quality
+    ("security", (r"\bsecurity\b", r"\bcyber(?:security)?\b")),
+    ("application_security", (r"\bapplication security\b", r"\bappsec\b")),
+    ("cloud_security", (r"\bcloud security\b",)),
+    ("identity_access", (r"\bidentity and access\b", r"\bidentity access\b", r"\biam\b")),
+    ("detection_response", (r"\bdetection and response\b", r"\bincident response\b", r"\bsoc\b")),
+    ("quality", (r"\bqa\b", r"\bquality assurance\b", r"\bsoftware test\b")),
+    ("test_automation", (r"\btest automation\b", r"\bautomation test\b", r"\bsdet\b")),
+
+    # Systems, hardware, networking, and specialized engineering
     ("embedded", (r"\bembedded\b",)),
     ("firmware", (r"\bfirmware\b",)),
-    ("distributed_systems", (r"\bdistributed systems?\b",)),
-    ("database", (r"\bdatabase\b", r"\bsql\b")),
-    ("network", (r"\bnetwork(ing)?\b",)),
-    ("payments", (r"\bpayments?\b",)),
-    ("fraud", (r"\bfraud\b", r"\brisk\b")),
+    ("robotics", (r"\brobotics?\b", r"\bautonomous systems?\b")),
+    ("hardware", (r"\bhardware\b", r"\bfpga\b", r"\basic\b")),
+    ("network", (r"\bnetwork(?:ing)?\b",)),
+    ("telecom", (r"\btelecom(?:munications)?\b", r"\b5g\b")),
+    ("geospatial", (r"\bgeospatial\b", r"\bgis\b", r"\bmapping\b")),
+
+    # Enterprise application ecosystems. These are identity-defining because
+    # jobs on different enterprise platforms are usually different requisitions.
+    ("windchill", (r"\bwindchill\b", r"\bptc windchill\b", r"\bplm\b")),
+    ("salesforce", (r"\bsalesforce\b", r"\bapex\b")),
+    ("sap", (r"\bsap\b", r"\babap\b")),
+    ("servicenow", (r"\bservice[ -]?now\b",)),
+    ("workday", (r"\bworkday\b",)),
+    ("oracle", (r"\boracle\b", r"\bpeoplesoft\b")),
+
+    # Programming languages. Canonical tags combine common aliases so
+    # "Go Engineer" and "Golang Engineer" retain the same specialization.
+    ("golang", (
+        r"\bgolang\b",
+        r"\bgo language\b",
+        r"\bgo(?:lang)?\b(?=\s+(?:software\s+)?(?:engineer|developer)\b)",
+        r"\b(?:engineer|developer)[, /-]+go(?:lang)?\b",
+    )),
+    ("python", (r"\bpython\b",)),
+    ("java", (r"\bjava\b",)),
+    ("javascript", (r"\bjavascript\b", r"\bnode(?:\.js)?\b", r"\breact(?:\.js)?\b")),
+    ("typescript", (r"\btypescript\b",)),
+    ("csharp", (r"\bc#\b", r"\bc sharp\b", r"\b\.net\b", r"\bdotnet\b")),
+    ("cpp", (r"\bc\+\+\b", r"\bc plus plus\b")),
+    ("rust", (r"\brust\b",)),
+    ("ruby", (r"\bruby\b", r"\brails\b")),
+    ("php", (r"\bphp\b",)),
+    ("scala", (r"\bscala\b",)),
+    ("kotlin", (r"\bkotlin\b",)),
+    ("swift", (r"\bswift\b",)),
+
+    # Product and industry domains that help distinguish otherwise generic
+    # software-engineering titles at the same employer.
+    ("payments", (r"\bpayments?\b", r"\bbilling\b")),
+    ("fraud", (r"\bfraud\b", r"\brisk platform\b")),
     ("growth", (r"\bgrowth\b",)),
+    ("fintech", (r"\bfintech\b", r"\bfinancial technology\b")),
+    ("healthcare", (r"\bhealthcare\b", r"\bhealth tech\b", r"\bclinical\b")),
+    ("ecommerce", (r"\be[ -]?commerce\b", r"\bmarketplace\b")),
+    ("adtech", (r"\bad[ -]?tech\b", r"\badvertising\b")),
+    ("gaming", (r"\bgaming\b", r"\bgameplay\b", r"\bgame engine\b")),
+    ("blockchain", (r"\bblockchain\b", r"\bweb3\b", r"\bcrypto\b")),
 ]
+
+
+# These tags materially narrow the role. If one title has one of these tags
+# and the other title is completely generic, JobLens should not group the two
+# unless strong description evidence confirms they are the same requisition.
+IDENTITY_DEFINING_SPECIALIZATIONS: frozenset[str] = frozenset({
+    "backend", "frontend", "fullstack", "api", "platform", "infrastructure",
+    "distributed_systems", "microservices", "cloud", "devops", "site_reliability",
+    "mobile", "ios", "android", "ml", "mlops", "generative_ai", "nlp",
+    "computer_vision", "data", "data_platform", "analytics", "database",
+    "security", "application_security", "cloud_security", "identity_access",
+    "detection_response", "quality", "test_automation", "embedded", "firmware",
+    "robotics", "hardware", "network", "telecom", "geospatial", "windchill",
+    "salesforce", "sap", "servicenow", "workday", "oracle", "golang", "python",
+    "java", "javascript", "typescript", "csharp", "cpp", "rust", "ruby", "php",
+    "scala", "kotlin", "swift", "payments", "fraud", "growth", "fintech",
+    "healthcare", "ecommerce", "adtech", "gaming", "blockchain",
+    "forward_deployed", "web", "business_systems", "quant_research",
+    "quant_development", "quant_trading",
+})
+
+
+PRIMARY_IDENTITY_SPECIALIZATIONS: frozenset[str] = frozenset({
+    # Languages
+    "golang", "python", "java", "javascript", "typescript", "csharp", "cpp",
+    "rust", "ruby", "php", "scala", "kotlin", "swift",
+    # Enterprise platforms
+    "windchill", "salesforce", "sap", "servicenow", "workday", "oracle",
+    # AI, data, security, mobile, systems, and industry subdomains
+    "ml", "mlops", "generative_ai", "nlp", "computer_vision", "data",
+    "data_platform", "analytics", "database", "application_security",
+    "cloud_security", "identity_access", "detection_response", "ios", "android",
+    "embedded", "firmware", "robotics", "hardware", "network", "telecom",
+    "geospatial", "payments", "fraud", "growth", "fintech", "healthcare",
+    "ecommerce", "adtech", "gaming", "blockchain",
+    "forward_deployed", "web", "business_systems", "quant_research",
+    "quant_development", "quant_trading",
+})
+
+
+# Tags within one dimension cannot identify the same role when both sides name
+# different values. For example, an iOS role is not the same as an Android role,
+# and a Windchill role is not the same as a Salesforce role.
+EXCLUSIVE_SPECIALIZATION_DIMENSIONS: tuple[frozenset[str], ...] = (
+    frozenset({"backend", "frontend"}),
+    frozenset({"ios", "android"}),
+    frozenset({"windchill", "salesforce", "sap", "servicenow", "workday", "oracle"}),
+    frozenset({"golang", "python", "java", "javascript", "typescript", "csharp", "cpp", "rust", "ruby", "php", "scala", "kotlin", "swift"}),
+    frozenset({"quant_research", "quant_development", "quant_trading"}),
+)
+
+
+def extract_specializations(raw_title: Any) -> list[str]:
+    """Return stable specialization tags extracted from a job title."""
+    cleaned = _clean_words(raw_title)
+    tags = [
+        name for name, patterns in SPECIALTY_PATTERNS
+        if any(re.search(pattern, cleaned, flags=re.I) for pattern in patterns)
+    ]
+    return sorted(dict.fromkeys(tags))
+
+
+def specialization_sets_conflict(first: set[str], second: set[str]) -> bool:
+    """Return True when two non-empty specialization sets identify different roles."""
+    if not first or not second:
+        return False
+
+    # Detect conflicts in exclusive dimensions even when the two titles also
+    # share a broad tag such as "backend" or "platform". For example,
+    # "Java Backend Engineer" and "Python Backend Engineer" remain different.
+    for dimension in EXCLUSIVE_SPECIALIZATION_DIMENSIONS:
+        left = first.intersection(dimension)
+        right = second.intersection(dimension)
+        if left and right and left.isdisjoint(right):
+            return True
+
+    primary_left = first.intersection(PRIMARY_IDENTITY_SPECIALIZATIONS)
+    primary_right = second.intersection(PRIMARY_IDENTITY_SPECIALIZATIONS)
+    if bool(primary_left) != bool(primary_right):
+        return True
+    if primary_left and primary_right and primary_left.isdisjoint(primary_right):
+        return True
+
+    if first.intersection(second):
+        return False
+
+    # For canonical identity, two disjoint identity-defining specializations
+    # are treated conservatively as different roles. This prevents broad family
+    # labels such as "software engineer" from collapsing unrelated requisitions.
+    return bool(
+        first.intersection(IDENTITY_DEFINING_SPECIALIZATIONS)
+        and second.intersection(IDENTITY_DEFINING_SPECIALIZATIONS)
+    )
+
 
 
 def extract_seniority(title: Any) -> Optional[str]:
@@ -227,11 +467,7 @@ def decompose_title(raw_title: Any) -> dict[str, Any]:
             family = canonical
             break
 
-    specialties = [
-        name for name, patterns in SPECIALTY_PATTERNS
-        if any(re.search(pattern, cleaned, flags=re.I) for pattern in patterns)
-    ]
-    specialties = sorted(dict.fromkeys(specialties))
+    specialties = extract_specializations(cleaned)
 
     seniority = extract_seniority(cleaned)
     if family:

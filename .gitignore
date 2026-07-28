@@ -1,47 +1,67 @@
 # =============================================================================
-# JobLens — Production .gitignore
+
+# JobLens Production .gitignore
+
 # Python + FastAPI + PostgreSQL + Celery + Redis + Next.js + Docker
-# GitHub Desktop: choose "Python" template, then this file replaces it fully.
+
+# GitHub Desktop: choose the Python template, then replace it with this file.
+
 # =============================================================================
 
 # =============================================================================
-# ENVIRONMENT & SECRETS (never commit these)
+
+# ENVIRONMENT AND SECRETS
+
+# Never commit these files.
+
 # =============================================================================
+
 .env
 .env.*
 !.env.example
 !.env.production.example
+
 *.pem
 *.key
 *.p12
 *.pfx
+
 secrets/
 .secrets/
 
+# Local PostgreSQL authentication files
+
+.pgpass
+pgpass.conf
+
 # =============================================================================
+
 # PYTHON
+
 # =============================================================================
-__pycache__/
+
+**pycache**/
 *.py[cod]
 *$py.class
 *.pyo
 *.pyd
 *.so
+
 *.egg
 *.egg-info/
-dist/
-build/
 eggs/
 parts/
 var/
 sdist/
 develop-eggs/
 .installed.cfg
+
 lib/
 lib64/
 MANIFEST
 
 # Virtual environments
+
 venv/
 .venv/
 env/
@@ -51,7 +71,8 @@ venv.bak/
 .python-version
 pythonenv*
 
-# Testing
+# Testing and coverage
+
 .pytest_cache/
 .coverage
 .coverage.*
@@ -63,6 +84,7 @@ pytest-report.xml
 test-results/
 
 # Type checking
+
 .mypy_cache/
 .dmypy.json
 dmypy.json
@@ -70,22 +92,33 @@ dmypy.json
 .pyre/
 
 # Linting
+
 .ruff_cache/
 
 # Jupyter
+
 .ipynb_checkpoints/
-# NOTE: removed *.ipynb so notebooks can be committed if needed
+
+# Notebooks are intentionally allowed to be committed.
+
+# Do not add *.ipynb here unless that policy changes.
 
 # =============================================================================
-# FASTAPI / UVICORN
+
+# FASTAPI AND UVICORN
+
 # =============================================================================
+
 *.pid
 *.sock
 uvicorn.log
 
 # =============================================================================
+
 # CELERY
+
 # =============================================================================
+
 celerybeat-schedule
 celerybeat-schedule.db
 celerybeat.pid
@@ -94,14 +127,25 @@ celery-beat.log
 celeryd.log
 
 # =============================================================================
+
 # ALEMBIC
-# =============================================================================
-migrations/__pycache__/
+
+# Migration source files must remain tracked.
 
 # =============================================================================
-# HUGGINGFACE / SENTENCE-TRANSFORMERS / EMBEDDINGS
+
+migrations/**pycache**/
+backend/migrations/**pycache**/
+backend/alembic/**pycache**/
+
 # =============================================================================
-# Local model caches — these are large binaries, never commit
+
+# HUGGING FACE, SENTENCE TRANSFORMERS, AND EMBEDDINGS
+
+# Local model caches are large and should not be committed.
+
+# =============================================================================
+
 .cache/
 huggingface/
 hf_cache/
@@ -119,46 +163,121 @@ sentence_transformers_cache/
 *.pkl
 *.pickle
 
-# NOTE: removed ~/.cache/* because Git does not track home-directory paths
+# =============================================================================
+
+# DATABASE
 
 # =============================================================================
-# DATABASE
-# =============================================================================
+
+# SQLite databases and support files
+
 *.sqlite
 *.sqlite3
 *.db
+*.db-journal
 *.db-shm
 *.db-wal
+
+# Local PostgreSQL bind-mount directories
+
 postgres_data/
 pgdata/
+.postgres-data/
+postgres-data/
+database_data/
+db_data/
+
+# Database dumps and backups
+
 *.sql.gz
 *.dump
+*.backup
+*.bak
+
 dumps/
 backups/
+database_backups/
+db_backups/
+
+# Do not ignore all *.sql files globally.
+
+# Alembic migrations, schema definitions, and seed SQL may need to be tracked.
 
 # =============================================================================
-# REDIS
+
+# JOB LISTING VERIFICATION
+
+# Generated reports, logs, backups, and manual-review files.
+
 # =============================================================================
+
+backend/availability_reports/
+availability_reports/
+
+# Covers listing-verification artifacts stored elsewhere by mistake
+
+listing_verification_*.jsonl
+listing_verification_**summary.json
+full_listing_cleanup.log
+full_listing_cleanup.pid
+new_dry_run.log
+new_dry_run.pid
+inactive_for_manual_review.txt
+inactive_manual_review.html
+pre_cleanup**.sql
+
+# =============================================================================
+
+# REDIS
+
+# =============================================================================
+
 redis_data/
 dump.rdb
 appendonly.aof
 redis.log
 
+# Redis append-only storage directories
+
+appendonlydir/
+
 # =============================================================================
+
 # DOCKER
+
 # =============================================================================
+
 .docker/
 docker-volumes/
 *.tar
 
+# Local Docker overrides may contain machine-specific settings or secrets.
+
+docker-compose.override.yml
+docker-compose.override.yaml
+compose.override.yml
+compose.override.yaml
+
+# Example override files may still be committed.
+
+!docker-compose.override.example.yml
+!docker-compose.override.example.yaml
+!compose.override.example.yml
+!compose.override.example.yaml
+
 # =============================================================================
-# NODE / NEXT.JS
+
+# NODE AND NEXT.JS
+
 # =============================================================================
+
 node_modules/
+
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
 .pnpm-store/
 package-lock.json.bak
 
@@ -172,17 +291,26 @@ out/
 next-env.d.ts
 
 # =============================================================================
+
 # LOGS
-# =============================================================================
-logs/
-*.log
-log/
-*.log.*
-scraper_logs/
 
 # =============================================================================
-# OS ARTIFACTS
+
+logs/
+log/
+scraper_logs/
+
+*.log
+*.log.*
+
 # =============================================================================
+
+# OS ARTIFACTS
+
+# =============================================================================
+
+# macOS
+
 .DS_Store
 .DS_Store?
 ._*
@@ -197,6 +325,8 @@ Network Trash Folder
 Temporary Items
 .apdisk
 
+# Windows
+
 Thumbs.db
 Thumbs.db:encryptable
 ehthumbs.db
@@ -205,20 +335,29 @@ Desktop.ini
 $RECYCLE.BIN/
 *.lnk
 
+# Backup files created by some editors
+
 *~
 
 # =============================================================================
-# EDITORS — VS CODE
+
+# EDITORS: VS CODE
+
 # =============================================================================
+
 .vscode/
 !.vscode/extensions.json
 !.vscode/settings.json.example
+
 .history/
 .vscode-test/
 
 # =============================================================================
-# EDITORS — JETBRAINS
+
+# EDITORS: JETBRAINS
+
 # =============================================================================
+
 .idea/
 *.iml
 *.iws
@@ -227,19 +366,29 @@ out/
 .idea_modules/
 
 # =============================================================================
-# BUILD & DIST ARTIFACTS
+
+# BUILD AND DISTRIBUTION ARTIFACTS
+
 # =============================================================================
+
 dist/
 build/
 target/
+
 *.whl
 *.tar.gz
 *.zip
+
+# Documentation ZIP files may be intentionally tracked.
+
 !docs/*.zip
 
 # =============================================================================
-# SCRAPERS / PLAYWRIGHT
+
+# SCRAPERS AND PLAYWRIGHT
+
 # =============================================================================
+
 playwright-report/
 test-results/
 .playwright/
@@ -247,12 +396,28 @@ browser_data/
 cookies.json
 session_data/
 
+# Browser authentication and persistent context data
+
+storage-state.json
+auth-state.json
+playwright/.auth/
+
 # =============================================================================
-# MISC
+
+# TEMPORARY AND MISCELLANEOUS FILES
+
 # =============================================================================
+
 *.swp
 *.swo
 *.tmp
 *.temp
+
 .temp/
-.tmp
+.tmp/
+
+# Temporary patch and merge files
+
+*.orig
+*.rej
+

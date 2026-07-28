@@ -25,6 +25,25 @@ export interface CanonicalSource {
   listing_ids: number[];
 }
 
+export interface ScoreComponent {
+  key: string;
+  label: string;
+  points: number;
+  maximum?: number | null;
+  tone: "positive" | "neutral" | "negative";
+  detail: string;
+}
+
+export interface ActiveHiringReasoning {
+  score: number;
+  label: string;
+  summary: string;
+  formula: string;
+  components: ScoreComponent[];
+  signals: string[];
+  limitations: string[];
+}
+
 export interface JobListItem {
   id: number;
   source: string;
@@ -54,7 +73,9 @@ export interface JobListItem {
   repost_count: number;
   is_active: boolean;
   active_hiring_confidence?: number | null;
+  active_hiring_reasoning?: ActiveHiringReasoning | null;
   ghost_job_probability?: number | null;
+  ghost_confidence?: number | null;
   health_score?: number | null;
   activity_score?: number | null;
   canonical_sources: CanonicalSource[];

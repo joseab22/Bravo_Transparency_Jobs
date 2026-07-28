@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import timedelta
 from types import SimpleNamespace
 from typing import Iterable
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.time import utc_now
 from app.models.models import JobPosting
 
 _SOURCE_PRIORITY = {
@@ -31,23 +33,41 @@ def canonical_group_id(job: JobPosting) -> int:
 
 
 async def load_canonical_sources(
-    jobs: Iterable[JobPosting], db: AsyncSession
+    jobs: Iterable[JobPosting],
+    db: AsyncSession,
+    *,
+    max_age_days: int | None = None,
 ) -> dict[int, list[dict]]:
-    """Return one combined publisher list for each canonical job group."""
+    """Return publisher evidence from active canonical members in the requested age window."""
     group_ids = {canonical_group_id(job) for job in jobs}
     if not group_ids:
         return {}
 
     group_expr = func.coalesce(JobPosting.canonical_job_id, JobPosting.id)
+    conditions = [
+        group_expr.in_(group_ids),
+        JobPosting.is_active.is_(True),
+    ]
+    if max_age_days is not None:
+        cutoff = utc_now() - timedelta(days=max_age_days)
+        conditions.append(or_(
+            JobPosting.date_posted >= cutoff,
+            and_(
+                JobPosting.date_posted.is_(None),
+                JobPosting.date_first_seen >= cutoff,
+            ),
+        ))
+
     members = list((await db.execute(
         select(JobPosting)
         .options(selectinload(JobPosting.source_sightings))
-        .where(group_expr.in_(group_ids))
+        .where(*conditions)
     )).scalars().unique())
 
     aggregated: dict[int, dict[str, dict]] = defaultdict(dict)
     for member in members:
         group_id = canonical_group_id(member)
+
         sightings = list(member.source_sightings)
         if not sightings:
             # Legacy rows created before source sightings were introduced still
