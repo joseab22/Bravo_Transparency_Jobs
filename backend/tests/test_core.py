@@ -224,7 +224,13 @@ def test_registry_covers_known_sources():
     assert set(SCRAPER_REGISTRY) == KNOWN_SOURCES
 
 
-def test_default_schedule_enables_only_simplify():
+def test_default_schedule_enables_only_simplify(monkeypatch):
+    # _env_file=None only skips the dotenv file; pydantic-settings still reads
+    # real OS environment variables (e.g. injected by docker-compose's
+    # env_file: directive from backend/.env), so this must be explicitly
+    # isolated to actually test the code's own default rather than whatever
+    # ENABLED_SCRAPER_SOURCES the surrounding container happens to have.
+    monkeypatch.delenv("ENABLED_SCRAPER_SOURCES", raising=False)
     settings = Settings(_env_file=None)
     assert settings.enabled_source_set == {"simplify"}
 
@@ -314,6 +320,35 @@ def test_active_hiring_reasoning_reports_penalties_and_missing_data():
     assert "Limited signs of active hiring" in reasoning["summary"]
     assert any("Applicant count was not available" in item for item in reasoning["limitations"])
     assert "—" not in str(reasoning)
+    assert "long- unning" not in reasoning["summary"]
+
+
+def test_active_hiring_reasoning_spells_long_running_listing_correctly():
+    """The 'long-running listing' concern only survives join_items(...[:3])
+    when it isn't crowded out by other concerns listed earlier, so this uses
+    a scenario where it is the only concern factor present.
+    """
+    from app.services.scoring import ScoringService
+
+    job = SimpleNamespace(
+        active_hiring_confidence=50.0,
+        ghost_job_probability=0.20,
+        activity_score=70.0,
+        ghost_confidence=0.60,
+        listing_classification="original",
+        is_active=True,
+        days_active=120,
+        repost_count=0,
+        salary_listed=True,
+        applicant_count=25,
+    )
+
+    reasoning = ScoringService.active_hiring_reasoning(job, source_count=1)
+
+    assert reasoning is not None
+    assert "long-running listing" in reasoning["summary"]
+    assert "long- unning" not in reasoning["summary"]
+    assert "—" not in str(reasoning)
 
 
 
@@ -374,7 +409,7 @@ async def test_ingestion_preserves_parallel_stable_ids(tmp_path):
         result = await ingest_jobs(jobs, db)
         count = await db.scalar(select(func.count(JobPosting.id)))
     await engine.dispose()
-    assert result == {"total": 2, "created": 2, "updated": 0, "errors": 0}
+    assert result == {"total": 2, "created": 2, "updated": 0, "errors": 0, "closed": 0}
     assert count == 2
 
 @pytest.mark.asyncio
@@ -407,7 +442,7 @@ async def test_ingestion_updates_prefetched_stable_ids_without_duplication(tmp_p
     await engine.dispose()
 
     assert first["created"] == 1
-    assert second == {"total": 1, "created": 0, "updated": 1, "errors": 0}
+    assert second == {"total": 1, "created": 0, "updated": 1, "errors": 0, "closed": 0}
     assert count == 1
     assert job.applicant_count == 25
 
@@ -531,7 +566,7 @@ async def test_ingestion_merges_same_jsearch_id_and_retains_all_publishers(tmp_p
         sources = await load_canonical_sources([posting], db)
 
     await engine.dispose()
-    assert result == {"total": 2, "created": 1, "updated": 1, "errors": 0}
+    assert result == {"total": 2, "created": 1, "updated": 1, "errors": 0, "closed": 0}
     assert posting_count == 1
     assert sighting_count == 2
     assert {item["source"] for item in sources[posting.id]} == {"linkedin", "indeed"}
@@ -601,7 +636,14 @@ def test_generic_jsearch_parser_attributes_returned_publisher():
 
 
 
-def test_jsearch_pro_schedule_stays_inside_protected_budget():
+def test_jsearch_pro_schedule_stays_inside_protected_budget(monkeypatch):
+    # Same environment-isolation issue as test_default_schedule_enables_only_
+    # simplify: this test relies on the default 7-entry JSEARCH_QUERIES list
+    # to compute jsearch_requests_per_run == 70, so a real JSEARCH_QUERIES
+    # value from the container's environment (e.g. the longer, deliberately
+    # budget-tuned production list documented in .env.example) must be
+    # cleared for this to test the code's own default.
+    monkeypatch.delenv("JSEARCH_QUERIES", raising=False)
     configured = Settings(
         _env_file=None,
         enabled_scraper_sources="simplify,jsearch",
@@ -635,8 +677,16 @@ def test_jsearch_rejects_schedule_that_can_exceed_protected_budget():
         )
 
 
-def test_jsearch_excludes_simplify_but_keeps_other_publishers():
+def test_jsearch_excludes_simplify_but_keeps_other_publishers(monkeypatch):
+    from app.core.config import settings
     from app.workers.scrapers.jsearch import JSearchScraper
+
+    # JSearchScraper reads the real, unisolated global `settings` singleton
+    # (constructed once at import time from the container's actual
+    # environment), not a fresh Settings() instance, so the query-level
+    # exclusion this test verifies must be pinned explicitly rather than
+    # relying on whatever JSEARCH_EXCLUDED_DOMAINS the environment has.
+    monkeypatch.setattr(settings, "jsearch_excluded_domains", "simplify.jobs")
 
     parser = JSearchScraper(max_pages=1)
     mixed = parser.parse_job({
@@ -970,3 +1020,708 @@ def test_prepare_job_record_respects_database_text_capacities():
     assert len(record["salary_currency"]) <= 10
     assert len(record["company_website"] or "") <= 500
     assert len(record["industry"] or "") <= 200
+
+
+@pytest.mark.asyncio
+async def test_run_full_detection_does_not_transitively_merge_conflicting_specializations(tmp_path):
+    """A generic listing may bridge to one specialized variant, but that must not
+    transitively pull an incompatible specialized variant into the same canonical
+    group. Mirrors the documented "Senior Software Engineer - Admin" vs
+    "Senior Software Engineer - Lead" example, with a generic third listing
+    (no specialization tag) posted in between them.
+
+    The titles carry a shared, keyword-free "North America Team" clause so the
+    raw-title similarity between the generic listing and each specialized
+    variant clears the 0.90 threshold roles_match() requires to bridge a
+    generic listing onto a non-identity-defining specialization tag (admin /
+    tech_lead), while the "Admin" and "Lead" variants remain too dissimilar,
+    and too weakly evidenced without description embeddings, to match
+    directly.
+    """
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from app.db.base import Base
+    from app.models.models import Company, JobPosting
+    from app.services.repost_detector import RepostDetectionService
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'transitive-chain.db'}")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+    base = datetime(2026, 7, 1)
+
+    def make(company_id, req, title, hours):
+        when = base + timedelta(hours=hours)
+        return JobPosting(
+            company_id=company_id,
+            job_identity_key=f"pending-{req}",
+            source="simplify", collection_provider="simplify",
+            source_url=f"https://jobs.example.test/{req}",
+            external_id=req,
+            title_raw=title, title_normalized=title.lower(),
+            location_raw="Annapolis Junction, MD", city="Annapolis Junction", state="MD",
+            metro_area="Annapolis Junction, MD", country="US",
+            remote_type="Onsite", employment_type="Full-time",
+            date_posted=when, date_first_seen=when, date_last_seen=when,
+            is_active=True,
+        )
+
+    async with Session() as db:
+        company = Company(name="Wyetech", name_normalized="wyetech")
+        db.add(company)
+        await db.flush()
+
+        lead = make(company.id, "req-lead", "Senior Software Engineer, North America Team - Lead", 0)
+        generic = make(company.id, "req-generic", "Senior Software Engineer, North America Team", 4)
+        admin = make(company.id, "req-admin", "Senior Software Engineer, North America Team - Admin", 8)
+        db.add_all([lead, generic, admin])
+        await db.commit()
+
+        await RepostDetectionService().run_full_detection(db)
+        await db.commit()
+        await db.refresh(lead)
+        await db.refresh(generic)
+        await db.refresh(admin)
+
+    await engine.dispose()
+
+    assert lead.specialization == "tech_lead"
+    assert admin.specialization == "admin"
+    assert generic.specialization is None
+    # The generic listing may still be treated as related to the "Lead" variant.
+    assert generic.canonical_job_id == lead.id
+    # The "Admin" variant must never be pulled into the "Lead" group merely
+    # because both separately resembled the generic listing.
+    assert admin.canonical_job_id == admin.id
+    assert admin.listing_classification == "original"
+
+
+@pytest.mark.asyncio
+async def test_run_full_detection_repost_gap_uses_immediate_predecessor(tmp_path):
+    """RepostEvent.days_since_previous should reflect the gap since the
+    immediately preceding occurrence, not since the original root listing,
+    once a repost chain is more than one hop deep.
+    """
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from app.db.base import Base
+    from app.models.models import Company, JobPosting, RepostEvent
+    from app.services.repost_detector import RepostDetectionService
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'repost-gap.db'}")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+    base = datetime(2026, 1, 1)
+
+    def make(company_id, req, hours):
+        when = base + timedelta(hours=hours)
+        return JobPosting(
+            company_id=company_id,
+            job_identity_key=f"pending-{req}",
+            source="simplify", collection_provider="simplify",
+            source_url=f"https://jobs.example.test/{req}",
+            external_id=req,
+            title_raw="Software Engineer 1", title_normalized="software engineer 1",
+            location_raw="Annapolis Junction, MD", city="Annapolis Junction", state="MD",
+            metro_area="Annapolis Junction, MD", country="US",
+            remote_type="Onsite", employment_type="Full-time",
+            date_posted=when, date_first_seen=when, date_last_seen=when,
+            is_active=True,
+        )
+
+    async with Session() as db:
+        company = Company(name="Wyetech", name_normalized="wyetech")
+        db.add(company)
+        await db.flush()
+
+        root = make(company.id, "req-root", 0)
+        root.is_active = False
+        root.date_last_seen = base + timedelta(days=5)
+
+        p1 = make(company.id, "req-p1", 24 * 60)
+        p1.is_active = False
+        p1.date_last_seen = base + timedelta(days=150)
+
+        p2 = make(company.id, "req-p2", 24 * 160)
+
+        db.add_all([root, p1, p2])
+        await db.commit()
+
+        await RepostDetectionService().run_full_detection(db)
+        await db.commit()
+        await db.refresh(p2)
+
+        events = list((await db.execute(
+            select(RepostEvent).where(RepostEvent.job_posting_id == p2.id)
+        )).scalars())
+
+    await engine.dispose()
+
+    assert p2.listing_classification == "repost"
+    assert p2.canonical_job_id == root.id
+    assert len(events) == 1
+    # p2 was posted 10 days after p1 (its actual predecessor) closed, not 155
+    # days after the original root closed.
+    assert events[0].days_since_previous == 10
+
+
+@pytest.mark.asyncio
+async def test_run_full_detection_does_not_transitively_merge_conflicting_onsite_locations(tmp_path):
+    """A Dallas listing must not inherit an Austin canonical group merely
+    because an Austin intermediate listing sits between them chronologically.
+    roles_match() does not evaluate location at all, so the canonical-root
+    guard must separately re-check location compatibility against the
+    resolved root, not just role/specialization compatibility.
+    """
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from app.db.base import Base
+    from app.models.models import Company, JobPosting
+    from app.services.repost_detector import RepostDetectionService
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'transitive-location.db'}")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+    base = datetime(2026, 7, 1)
+
+    def make(company_id, req, city, state, hours):
+        when = base + timedelta(hours=hours)
+        return JobPosting(
+            company_id=company_id,
+            job_identity_key=f"pending-{req}",
+            source="jsearch", collection_provider="jsearch",
+            source_url=f"https://jobs.example.test/{req}",
+            external_id=req,
+            title_raw="Software Engineer", title_normalized="software engineer",
+            location_raw=f"{city}, {state}", city=city, state=state,
+            metro_area=f"{city}, {state}", country="US",
+            remote_type="Onsite", employment_type="Full-time",
+            date_posted=when, date_first_seen=when, date_last_seen=when,
+            is_active=True,
+        )
+
+    async with Session() as db:
+        company = Company(name="Acme", name_normalized="acme")
+        db.add(company)
+        await db.flush()
+
+        root = make(company.id, "req-austin-root", "Austin", "TX", 0)
+        intermediate = make(company.id, "req-austin-mid", "Austin", "TX", 4)
+        newest = make(company.id, "req-dallas-new", "Dallas", "TX", 8)
+        db.add_all([root, intermediate, newest])
+        await db.commit()
+
+        await RepostDetectionService().run_full_detection(db)
+        await db.commit()
+        await db.refresh(root)
+        await db.refresh(intermediate)
+        await db.refresh(newest)
+
+    await engine.dispose()
+
+    # Sanity check: the Austin intermediate is expected to validly group with
+    # the Austin root (same exact onsite location, distinct requisition IDs).
+    assert intermediate.canonical_job_id == root.id
+    # The Dallas record must not inherit the Austin canonical group.
+    assert newest.canonical_job_id != root.id
+    assert newest.canonical_job_id == newest.id
+    assert newest.listing_classification == "original"
+
+
+@pytest.mark.asyncio
+async def test_enrich_locations_invalidates_all_score_fields(tmp_path, monkeypatch):
+    """A geocoding update can change metro_area, which can change which
+    SalaryBenchmark row is preferred, not just active_hiring_confidence.
+    enrich_locations() must invalidate every score field, matching every
+    other score-invalidation site in the codebase (ingestion, repost
+    detection, listing verification, identity backfill).
+    """
+    from types import SimpleNamespace as NS
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from app.core.config import settings
+    from app.db.base import Base
+    from app.models.models import Company, JobPosting
+    from app.services import location_enrichment
+    from app.services.repost_detector import SCORE_FIELDS
+
+    monkeypatch.setattr(settings, "geocoding_enabled", True)
+    monkeypatch.setattr(settings, "geocoding_delay_seconds", 0.0)
+
+    fake_location = NS(
+        latitude=30.2672,
+        longitude=-97.7431,
+        raw={"address": {"city": "Austin", "state": "Texas", "country_code": "us"}},
+    )
+
+    def fake_geocode(_value):
+        # Called via asyncio.to_thread(_geocode, raw) in the real code path,
+        # so this replacement must be a plain sync callable, not a coroutine.
+        return fake_location
+
+    monkeypatch.setattr(location_enrichment, "_geocode", fake_geocode)
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'enrich-locations.db'}")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with Session() as db:
+        company = Company(name="Acme", name_normalized="acme")
+        db.add(company)
+        await db.flush()
+
+        job = JobPosting(
+            company_id=company.id,
+            job_identity_key="acme|software engineer|austin",
+            source="simplify", collection_provider="simplify",
+            external_id="req-1",
+            title_raw="Software Engineer", title_normalized="software engineer",
+            location_raw="Austin, TX", city=None, state=None, country="US",
+            remote_type="Onsite", employment_type="Full-time",
+            is_active=True,
+            **{field: 1.0 for field in SCORE_FIELDS if field != "market_salary"},
+            market_salary=100_000,
+        )
+        db.add(job)
+        await db.commit()
+
+        result = await location_enrichment.enrich_locations(db, limit=10)
+        await db.refresh(job)
+
+    await engine.dispose()
+
+    assert result["updated_jobs"] == 1
+    for field in SCORE_FIELDS:
+        assert getattr(job, field) is None, f"{field} was not invalidated"
+    assert job.city == "Austin"
+
+
+def test_simplify_parser_tags_closed_records_instead_of_dropping_them():
+    from app.workers.scrapers.simplify import SimplifyScraper
+
+    scraper = SimplifyScraper()
+    base = {
+        "id": "req-1",
+        "title": "Software Engineer",
+        "company_name": "Acme",
+        "locations": ["Remote"],
+        "url": "https://simplify.jobs/p/req-1",
+    }
+
+    open_record = scraper.parse_job(dict(base, is_closed="false", active="true"))
+    closed_record = scraper.parse_job(dict(base, is_closed="true"))
+    inactive_record = scraper.parse_job(dict(base, active="false"))
+
+    assert open_record is not None
+    assert "provider_reports_closed" not in open_record
+    assert closed_record is not None
+    assert closed_record["provider_reports_closed"] is True
+    assert inactive_record is not None
+    assert inactive_record["provider_reports_closed"] is True
+
+
+@pytest.mark.asyncio
+async def test_simplify_closed_signal_deactivates_matching_existing_row(tmp_path):
+    """A closed/inactive Simplify record must deactivate the matching
+    existing row (with a JobEvent explaining why) rather than being silently
+    discarded, so a confirmed-closed listing does not linger is_active=True
+    indefinitely.
+    """
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from app.db.base import Base
+    from app.models.models import JobEvent, JobPosting
+    from app.workers.ingestion import ingest_jobs
+    from app.workers.scrapers.simplify import SimplifyScraper
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'closure.db'}")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+
+    scraper = SimplifyScraper()
+    base = {
+        "id": "req-1",
+        "title": "Software Engineer",
+        "company_name": "Acme",
+        "locations": ["Remote"],
+        "url": "https://simplify.jobs/p/req-1",
+    }
+    original_record = scraper.parse_job(dict(base, is_closed="false", active="true"))
+    closed_record = scraper.parse_job(dict(base, is_closed="true"))
+    assert original_record is not None
+    assert closed_record is not None
+
+    async with Session() as db:
+        first = await ingest_jobs([original_record], db)
+        assert first["created"] == 1
+
+        second = await ingest_jobs([closed_record], db)
+        assert second == {"total": 1, "created": 0, "updated": 0, "errors": 0, "closed": 1}
+
+        job = (await db.execute(select(JobPosting))).scalar_one()
+        events = list((await db.execute(
+            select(JobEvent).where(JobEvent.job_posting_id == job.id)
+        )).scalars())
+
+    await engine.dispose()
+
+    assert job.is_active is False
+    assert job.active_hiring_confidence is None
+    assert any(event.event_type == "expired" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_simplify_closed_signal_with_no_matching_row_is_a_noop(tmp_path):
+    """A closed signal for a listing JobLens never collected must not create
+    a new (inactive) row — there is nothing to deactivate."""
+    from sqlalchemy import func, select
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from app.db.base import Base
+    from app.models.models import JobPosting
+    from app.workers.ingestion import ingest_jobs
+    from app.workers.scrapers.simplify import SimplifyScraper
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'closure-noop.db'}")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+
+    scraper = SimplifyScraper()
+    closed_record = scraper.parse_job({
+        "id": "never-seen",
+        "title": "Software Engineer",
+        "company_name": "Acme",
+        "locations": ["Remote"],
+        "url": "https://simplify.jobs/p/never-seen",
+        "is_closed": "true",
+    })
+    assert closed_record is not None
+
+    async with Session() as db:
+        result = await ingest_jobs([closed_record], db)
+        count = await db.scalar(select(func.count(JobPosting.id)))
+
+    await engine.dispose()
+
+    assert result == {"total": 1, "created": 0, "updated": 0, "errors": 0, "closed": 0}
+    assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_location_change_on_reingestion_forces_snapshot_and_event(tmp_path):
+    """A silent location/remote-type/employment-type change on re-ingestion
+    must force a snapshot, invalidate scores, and leave a JobEvent, matching
+    how title/description/salary changes are already tracked.
+    """
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from app.db.base import Base
+    from app.models.models import JobEvent, JobPosting, JobSnapshot
+    from app.workers.ingestion import ingest_jobs
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'location-change.db'}")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+
+    original = {
+        "source": "simplify",
+        "external_id": "req-1",
+        "source_url": "https://example/1",
+        "company_name": "Acme",
+        "title_raw": "Software Engineer",
+        "location_raw": "Austin, TX",
+        "remote_type": "Onsite",
+    }
+    moved = dict(original, location_raw="Dallas, TX")
+
+    async with Session() as db:
+        await ingest_jobs([original], db)
+
+        # Simulate a prior scoring pass so invalidation is actually observable
+        # (a never-scored job's active_hiring_confidence is already None).
+        scored = (await db.execute(select(JobPosting))).scalar_one()
+        scored.active_hiring_confidence = 72.0
+        await db.commit()
+
+        await ingest_jobs([moved], db)
+
+        job = (await db.execute(select(JobPosting))).scalar_one()
+        snapshots = list((await db.execute(
+            select(JobSnapshot).where(JobSnapshot.job_posting_id == job.id)
+        )).scalars())
+        events = list((await db.execute(
+            select(JobEvent).where(JobEvent.job_posting_id == job.id)
+        )).scalars())
+
+    await engine.dispose()
+
+    assert job.location_raw == "Dallas, TX"
+    assert job.active_hiring_confidence is None
+    # One snapshot at creation, one forced by the location change.
+    assert len(snapshots) == 2
+    assert any(event.event_type == "location_changed" for event in events)
+    location_event = next(event for event in events if event.event_type == "location_changed")
+    assert location_event.payload["old"]["location_raw"] == "Austin, TX"
+    assert location_event.payload["new"]["location_raw"] == "Dallas, TX"
+
+
+def test_targeted_scraper_drops_record_with_no_matching_publisher():
+    """A LinkedIn-targeted scrape that returns no LinkedIn-attributed apply
+    option must drop the record rather than storing it under source="linkedin"
+    with no actual LinkedIn evidence.
+    """
+    from app.workers.scrapers.linkedin import LinkedInScraper
+
+    parsed = LinkedInScraper(max_pages=1).parse_job({
+        "job_id": "no-linkedin-option",
+        "job_title": "Data Analyst",
+        "employer_name": "Acme",
+        "job_city": "Los Angeles",
+        "job_state": "CA",
+        "job_publisher": "Indeed",
+        "job_apply_link": "https://indeed.com/viewjob?jk=no-linkedin-option",
+        "apply_options": [
+            {"publisher": "Indeed", "apply_link": "https://indeed.com/viewjob?jk=no-linkedin-option"},
+            {"publisher": "Acme Careers", "apply_link": "https://careers.acme.test/no-linkedin-option", "is_direct": True},
+        ],
+    })
+    assert parsed is None
+
+
+@pytest.mark.asyncio
+async def test_prepare_company_cache_recovers_from_concurrent_creation_race(tmp_path):
+    """Two ingestion runs (e.g. Simplify and Glassdoor, which hold
+    independent Redis locks and can run concurrently) racing to create the
+    same new company must not crash the whole batch: the run that loses the
+    race should use the row the other one committed, not raise.
+    """
+    from sqlalchemy import func, select
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from app.db.base import Base
+    from app.models.models import Company
+    from app.workers.ingestion import _prepare_company_cache
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'company-race.db'}")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with Session() as setup_db:
+        # A "concurrent" ingestion run already committed this company.
+        setup_db.add(Company(name="Acme Technologies", name_normalized="acme technologies"))
+        await setup_db.commit()
+
+    records = [{"company_name": "Acme Technologies", "title_raw": "Software Engineer"}]
+
+    async with Session() as db:
+        real_execute = db.execute
+        call_count = 0
+
+        async def flaky_execute(statement, *args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Simulate this session's own prefetch lookup missing the row
+                # a concurrent session committed just after it ran, by
+                # issuing a real query guaranteed to return nothing instead
+                # of the real lookup.
+                return await real_execute(select(Company).where(Company.id.is_(None)))
+            return await real_execute(statement, *args, **kwargs)
+
+        db.execute = flaky_execute
+
+        cache = await _prepare_company_cache(records, db)
+        total_companies = await db.scalar(
+            select(func.count(Company.id)).where(Company.name_normalized == "acme technologies")
+        )
+
+    await engine.dispose()
+
+    assert cache["acme technologies"].name_normalized == "acme technologies"
+    assert cache["acme technologies"].name == "Acme Technologies"
+    # Recovery must use the concurrently-created row, not insert a duplicate.
+    assert total_companies == 1
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Software Engineer 1 (DevOps) with Security Clearance",
+        "Cleared Software Engineer - TS/SCI Required",
+        "Software Engineer (Active Top Secret Clearance Required)",
+        "Software Engineer - Must obtain DoD Clearance",
+        "Software Engineer, Public Trust",
+        "Software Engineer - Polygraph Required",
+    ],
+)
+def test_clearance_phrasing_is_tagged(title):
+    result = decompose_title(title)
+    assert "security_clearance" in (result["specialization"] or "")
+
+
+def test_clearance_and_non_clearance_variants_do_not_merge():
+    # Deliberately uses "Backend" rather than "DevOps" as the differentiator:
+    # bare "devops" matches its own FAMILY_PATTERNS entry ("devops engineer",
+    # checked ahead of "software engineer"), which would make job_family
+    # differ between these two titles for an unrelated reason and mask what
+    # this test is actually checking. "backend" has no such standalone
+    # family pattern (only the compound "backend engineer/developer" does).
+    plain_backend = decompose_title("Software Engineer 1 (Backend)")
+    cleared = decompose_title("Software Engineer 1 (Backend) with Security Clearance")
+    assert plain_backend["job_family"] == cleared["job_family"] == "software engineer"
+    assert "security_clearance" not in (plain_backend["specialization"] or "")
+    assert "security_clearance" in cleared["specialization"]
+
+    service = RepostDetectionService()
+    plain = fake_job(specialization=plain_backend["specialization"], title_raw="Software Engineer 1 (Backend)")
+    cleared_job = fake_job(
+        id=2,
+        specialization=cleared["specialization"],
+        title_raw="Software Engineer 1 (Backend) with Security Clearance",
+    )
+    assert not service.roles_match(cleared_job, plain)
+
+
+@pytest.mark.asyncio
+async def test_run_full_detection_skips_bad_row_without_aborting_batch(tmp_path, monkeypatch):
+    """One malformed row (simulated here as an unexpected decompose_title
+    failure) must not abort classification for every other job in the same
+    rebuild, and must not leave the bad row with a corrupted partial update.
+    """
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from app.db.base import Base
+    from app.models.models import Company, JobPosting
+    from app.services import repost_detector as repost_detector_module
+    from app.services.repost_detector import RepostDetectionService
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'bad-row.db'}")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+    base = datetime(2026, 7, 1)
+
+    def make(company_id, req, title, hours):
+        when = base + timedelta(hours=hours)
+        return JobPosting(
+            company_id=company_id,
+            job_identity_key=f"pending-{req}",
+            source="simplify", collection_provider="simplify",
+            source_url=f"https://jobs.example.test/{req}",
+            external_id=req,
+            title_raw=title, title_normalized=title.lower(),
+            location_raw="Remote", city=None, state=None,
+            metro_area="Remote", country="US",
+            remote_type="Remote", employment_type="Full-time",
+            date_posted=when, date_first_seen=when, date_last_seen=when,
+            is_active=True,
+        )
+
+    async with Session() as db:
+        company = Company(name="Acme", name_normalized="acme")
+        db.add(company)
+        await db.flush()
+
+        good_first = make(company.id, "req-good-1", "Software Engineer", 0)
+        bad = make(company.id, "req-bad", "__TRIGGER_BOOM__", 4)
+        good_second = make(company.id, "req-good-2", "Software Engineer", 8)
+        db.add_all([good_first, bad, good_second])
+        await db.commit()
+
+        real_decompose_title = repost_detector_module.decompose_title
+
+        def flaky_decompose_title(title_raw):
+            if title_raw == "__TRIGGER_BOOM__":
+                raise RuntimeError("simulated unexpected failure")
+            return real_decompose_title(title_raw)
+
+        monkeypatch.setattr(repost_detector_module, "decompose_title", flaky_decompose_title)
+
+        result = await RepostDetectionService().run_full_detection(db)
+        await db.commit()
+        await db.refresh(good_first)
+        await db.refresh(bad)
+        await db.refresh(good_second)
+
+    await engine.dispose()
+
+    assert result["jobs_processed"] == 3
+    assert result["errors"] == 1
+    # The bad row keeps its previous, still self-consistent state rather than
+    # a corrupted partial update (canonical_job_id was never set by anything
+    # other than this rebuild for a raw-constructed test row).
+    assert bad.listing_classification == "original"
+    assert bad.canonical_job_id is None
+    # The other two rows in the same run were still processed normally.
+    assert good_first.canonical_job_id == good_first.id
+    assert good_second.canonical_job_id == good_first.id
+    assert good_second.listing_classification == "parallel"
+
+
+@pytest.mark.asyncio
+async def test_clearance_required_filter_matches_tagged_specialization(tmp_path):
+    """clearance_required=True must match only rows carrying the
+    security_clearance specialization tag (wherever it falls in the
+    comma-joined value); clearance_required=False must match everything
+    else, explicitly including rows with a NULL specialization (SQL's
+    three-valued logic would otherwise silently exclude them from a plain
+    NOT(...) condition).
+    """
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from app.api.routes.jobs import _filters
+    from app.db.base import Base
+    from app.models.models import Company, JobPosting
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'clearance-filter.db'}")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with Session() as db:
+        company = Company(name="Acme", name_normalized="acme")
+        db.add(company)
+        await db.flush()
+
+        def make(req, specialization):
+            return JobPosting(
+                company_id=company.id,
+                job_identity_key=f"acme|swe|{req}",
+                source="simplify", collection_provider="simplify",
+                external_id=req,
+                title_raw="Software Engineer", title_normalized="software engineer",
+                location_raw="Remote", country="US",
+                remote_type="Remote", employment_type="Full-time",
+                specialization=specialization,
+                is_active=True,
+            )
+
+        # Tag present at the end of a multi-tag list, in the middle, and as
+        # the only tag -- covers all four OR branches in
+        # _has_specialization_tag, not just a substring collision.
+        cleared_end = make("req-cleared-end", "backend,security_clearance")
+        cleared_middle = make("req-cleared-middle", "backend,security_clearance,web")
+        cleared_only_tag = make("req-cleared-only", "security_clearance")
+        plain = make("req-plain", "backend")
+        no_spec = make("req-none", None)
+        db.add_all([cleared_end, cleared_middle, cleared_only_tag, plain, no_spec])
+        await db.commit()
+
+        cleared_ids = {"req-cleared-end", "req-cleared-middle", "req-cleared-only"}
+        other_ids = {"req-plain", "req-none"}
+
+        conditions = _filters(clearance_required=True)
+        rows = (await db.execute(select(JobPosting.external_id).where(*conditions))).scalars().all()
+        assert set(rows) == cleared_ids
+
+        conditions = _filters(clearance_required=False)
+        rows = (await db.execute(select(JobPosting.external_id).where(*conditions))).scalars().all()
+        assert set(rows) == other_ids
+
+        conditions = _filters()
+        rows = (await db.execute(select(JobPosting.external_id).where(*conditions))).scalars().all()
+        assert set(rows) == cleared_ids | other_ids
+
+    await engine.dispose()

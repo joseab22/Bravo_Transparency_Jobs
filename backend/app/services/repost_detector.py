@@ -274,68 +274,109 @@ class RepostDetectionService:
         buckets: dict[tuple[int, str, str, str, str], list[JobPosting]] = {}
         counts = {"original": 0, "parallel": 0, "repost": 0}
         changed = 0
+        errors = 0
 
         for job in jobs:
-            parts = decompose_title(job.title_raw)
-            job.job_family = parts["job_family"] or parts["title_normalized"]
-            job.specialization = parts["specialization"]
-            job.seniority = job.seniority or parts["seniority"]
-            job.title_normalized = parts["title_normalized"]
-            job.title_parse_confidence = parts["confidence"]
-            job.identity_fingerprint = build_identity_fingerprint(
-                job.company.name if job.company else job.company_id,
-                job.job_family, job.specialization, job.seniority,
-                job.employment_type, job.remote_type,
-            )
-            job.job_identity_key = build_job_identity_key(
-                job.company.name if job.company else job.company_id,
-                job.job_family, job.metro_area,
-                specialization=job.specialization, seniority=job.seniority,
-                employment_type=job.employment_type, remote_type=job.remote_type,
-            )
+            try:
+                parts = decompose_title(job.title_raw)
+                job.job_family = parts["job_family"] or parts["title_normalized"]
+                job.specialization = parts["specialization"]
+                job.seniority = job.seniority or parts["seniority"]
+                job.title_normalized = parts["title_normalized"]
+                job.title_parse_confidence = parts["confidence"]
+                job.identity_fingerprint = build_identity_fingerprint(
+                    job.company.name if job.company else job.company_id,
+                    job.job_family, job.specialization, job.seniority,
+                    job.employment_type, job.remote_type,
+                )
+                job.job_identity_key = build_job_identity_key(
+                    job.company.name if job.company else job.company_id,
+                    job.job_family, job.metro_area,
+                    specialization=job.specialization, seniority=job.seniority,
+                    employment_type=job.employment_type, remote_type=job.remote_type,
+                )
 
-            work_bucket = "remote" if job.remote_type == "Remote" else "site"
-            key = (
-                job.company_id,
-                job.job_family or job.title_normalized,
-                job.seniority or "",
-                job.employment_type or "",
-                work_bucket,
-            )
-            candidates = buckets.setdefault(key, [])
-            classification, canonical = "original", job
-            recent_candidates = candidates[-settings.identity_candidate_limit :]
-            for candidate in reversed(recent_candidates):
-                current = self.classify_pair(job, candidate)
-                if current in {"parallel", "repost"}:
-                    classification = current
-                    canonical_id = candidate.canonical_job_id or candidate.id
-                    canonical = next((x for x in candidates if x.id == canonical_id), candidate)
-                    break
+                work_bucket = "remote" if job.remote_type == "Remote" else "site"
+                key = (
+                    job.company_id,
+                    job.job_family or job.title_normalized,
+                    job.seniority or "",
+                    job.employment_type or "",
+                    work_bucket,
+                )
+                candidates = buckets.setdefault(key, [])
+                classification, canonical, matched_candidate = "original", job, None
+                recent_candidates = candidates[-settings.identity_candidate_limit :]
+                for candidate in reversed(recent_candidates):
+                    current = self.classify_pair(job, candidate)
+                    if current in {"parallel", "repost"}:
+                        canonical_id = candidate.canonical_job_id or candidate.id
+                        resolved = next((x for x in candidates if x.id == canonical_id), candidate)
+                        if resolved.id != candidate.id:
+                            # candidate only matches transitively through its own
+                            # group's root. Re-check the strong identity signals
+                            # directly against that root before trusting
+                            # transitivity: roles_match covers company, employment
+                            # type, seniority, family, specialization conflicts, and
+                            # work-arrangement compatibility; location compatibility
+                            # is evaluated separately using the same rule
+                            # classify_pair would use for this classification type.
+                            # We deliberately do not call classify_pair(job, resolved)
+                            # here, since its date/activity checks could reject a
+                            # legitimate deeper repost chain even when identity is
+                            # not actually in conflict.
+                            root_compatible = self.roles_match(job, resolved) and _locations_compatible(
+                                job, resolved, parallel=(current == "parallel")
+                            )
+                            if not root_compatible:
+                                continue
+                        classification = current
+                        canonical, matched_candidate = resolved, candidate
+                        break
 
-            previous_state = (job.listing_classification, job.canonical_job_id, job.repost_count)
-            job.listing_classification = classification
-            job.canonical_job_id = canonical.id if canonical.id else job.id
-            if classification == "repost":
-                prior_reposts = canonical.repost_count or 0
-                job.repost_count = prior_reposts + 1
-                canonical.repost_count = job.repost_count
-                db.add(RepostEvent(
-                    job_posting_id=job.id,
-                    job_identity_key=job.job_identity_key,
-                    occurrence_number=job.repost_count,
-                    date_seen=job.date_first_seen,
-                    source=job.source,
-                    days_since_previous=max((job.date_first_seen - canonical.date_last_seen).days, 0),
-                ))
-            else:
-                job.repost_count = canonical.repost_count or 0 if classification == "parallel" else 0
+                previous_state = (job.listing_classification, job.canonical_job_id, job.repost_count)
+                job.listing_classification = classification
+                job.canonical_job_id = canonical.id if canonical.id else job.id
+                if classification == "repost":
+                    assert matched_candidate is not None, (
+                        "repost classification must always resolve a matched candidate"
+                    )
+                    prior_reposts = canonical.repost_count or 0
+                    job.repost_count = prior_reposts + 1
+                    canonical.repost_count = job.repost_count
+                    db.add(RepostEvent(
+                        job_posting_id=job.id,
+                        job_identity_key=job.job_identity_key,
+                        occurrence_number=job.repost_count,
+                        date_seen=job.date_first_seen,
+                        source=job.source,
+                        # Measured from the immediately preceding occurrence, not the
+                        # group's original root, so the gap reflects this job's actual
+                        # predecessor rather than the age of the whole history.
+                        days_since_previous=max(
+                            (job.date_first_seen - matched_candidate.date_last_seen).days, 0
+                        ),
+                    ))
+                else:
+                    job.repost_count = canonical.repost_count or 0 if classification == "parallel" else 0
 
-            if previous_state != (job.listing_classification, job.canonical_job_id, job.repost_count):
-                changed += 1
-                _invalidate_scores(job)
-            counts[classification] += 1
-            candidates.append(job)
+                if previous_state != (job.listing_classification, job.canonical_job_id, job.repost_count):
+                    changed += 1
+                    _invalidate_scores(job)
+                counts[classification] += 1
+                candidates.append(job)
+            except Exception as exc:
+                # One malformed row (e.g. an unexpected embedding shape) must
+                # not abort classification for every other job in this
+                # rebuild. Any field mutations already applied above this
+                # point are limited to deterministic identity recomputation
+                # (safe to leave as-is or repeat next run); listing_
+                # classification/canonical_job_id/repost_count are only ever
+                # updated together, below this point, so a job that errors
+                # here simply keeps its previous, still-internally-consistent
+                # values instead of a corrupted partial update.
+                errors += 1
+                log.error("repost_detection_row_error", job_id=job.id, error=str(exc))
 
         await db.flush()
-        return {"jobs_processed": len(jobs), "jobs_changed": changed, **counts}
+        return {"jobs_processed": len(jobs), "jobs_changed": changed, "errors": errors, **counts}

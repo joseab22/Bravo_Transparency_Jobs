@@ -1,5 +1,7 @@
 # JobLens — Job Market Transparency
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 JobLens collects technology job postings over time and estimates **Active Hiring Confidence** from observable signals such as recency, repeated sightings, parallel advertisements, repost history, compensation disclosure, applicants, and company behavior.
 
 The score estimates posting activity. It is not proof of employer intent.
@@ -18,6 +20,9 @@ The score estimates posting activity. It is not proof of employer intent.
 - Enforces a Redis-backed monthly JSearch request budget before every request attempt, including retries.
 - Reconciles provider quota-response headers as a second guard and persists counters through Redis AOF storage.
 - Removes per-posting geocoding and model generation from collection. Optional enrichment runs separately.
+- Acts on Simplify's own closed/inactive signal: a listing the feed reports as closed deactivates the matching existing row (with a recorded reason) instead of being silently dropped.
+- Tracks title-derived specialization tags, including a best-effort security-clearance signal, and exposes a `clearance_required` filter on the jobs API and frontend.
+- Records a traceable event when a re-observed listing's location, work arrangement, or employment type changes, invalidating its score instead of updating silently.
 
 ## Pipeline
 
@@ -69,7 +74,7 @@ OPENWEBNINJA_API_KEY=your_openwebninja_key_here
 JSEARCH_PAGES_PER_QUERY=10
 JSEARCH_SCHEDULE_EVERY_HOURS=24
 JSEARCH_MONTHLY_REQUEST_LIMIT=10000
-JSEARCH_REQUEST_RESERVE=1000
+JSEARCH_REQUEST_RESERVE=1400
 JSEARCH_QUERIES=software engineer,data analyst,data engineer,data scientist,machine learning engineer,product manager,security engineer
 JSEARCH_COUNTRY=us
 JSEARCH_LANGUAGE=en

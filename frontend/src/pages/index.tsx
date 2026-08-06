@@ -99,6 +99,18 @@ function joinItems(items: string[]): string {
   return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
 }
 
+// KEEP IN SYNC with ScoringService.active_hiring_reasoning() and
+// ScoringService._active_hiring_components() in
+// backend/app/services/scoring.py. This function only runs if the API
+// response for a scored job is missing active_hiring_reasoning (normally
+// unreachable: the API always computes it whenever active_hiring_confidence
+// is set), so it exists as a defensive fallback, not the primary path.
+// There is no automated test pinning these two implementations together
+// (this frontend project has no test runner configured) -- any change to
+// the backend's weights (60/30/10 point caps), thresholds (ghost <0.25/
+// <0.50, activity >=75/>=45, evidence >=0.70/>=0.40), or adjustment values
+// (+5 parallel, -8 repost, -25 inactive) must be mirrored here by hand, or
+// this fallback will silently disagree with the real score's explanation.
 function fallbackScoreReasoning(job: JobListItem): ActiveHiringReasoning | null {
   const score = job.active_hiring_confidence;
   if (score == null) return null;
@@ -501,6 +513,7 @@ export default function Home() {
   const [employmentType, setEmploymentType] = useState("");
   const [remoteType, setRemoteType] = useState("");
   const [classification, setClassification] = useState("");
+  const [clearanceRequired, setClearanceRequired] = useState("");
   const [sortBy, setSortBy] = useState("active_hiring_confidence");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [collapseCanonical, setCollapseCanonical] = useState(true);
@@ -535,6 +548,8 @@ export default function Home() {
         employment_type: employmentType || undefined,
         remote_type: remoteType || undefined,
         classification: classification || undefined,
+        clearance_required:
+          clearanceRequired === "" ? undefined : clearanceRequired === "true",
         collapse_canonical: overrides?.collapseCanonical ?? collapseCanonical,
         sort_by: sortBy,
         sort_dir: sortDir,
@@ -721,6 +736,18 @@ export default function Home() {
               <option value="original">Original</option>
               <option value="parallel">Parallel</option>
               <option value="repost">Repost</option>
+            </select>
+
+            <select
+              aria-label="Security clearance"
+              title="Detected from the listing title text. This is a best-effort match and may not catch every clearance phrasing."
+              value={clearanceRequired}
+              onChange={(event) => setClearanceRequired(event.target.value)}
+              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
+            >
+              <option value="">Any clearance status</option>
+              <option value="true">Clearance mentioned</option>
+              <option value="false">No clearance mentioned</option>
             </select>
 
             <select

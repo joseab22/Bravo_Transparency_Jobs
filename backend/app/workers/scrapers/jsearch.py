@@ -177,6 +177,12 @@ def select_primary_source(
         for option in options:
             if option["source"] == expected:
                 return option, options
+        # A targeted scrape (e.g. a LinkedIn/Indeed-only run) found no option
+        # actually attributed to the expected publisher. Falling back to some
+        # other publisher's option here would silently mislabel it as if it
+        # came from the targeted board, so the caller drops the record
+        # instead of storing it under the wrong source.
+        return None, options
     # The first option comes from JSearch's primary job_publisher/apply link.
     # Keep that attribution as the row's primary source while retaining every
     # direct/company and alternate-board link in source_options.

@@ -64,6 +64,11 @@ joblens.run_repost_detection
 
 It rebuilds classification for the configured history window and only replaces repost events associated with the processed jobs. Any classification change clears old scores so Active Hiring Confidence is recalculated from current history.
 
+Two boundary behaviors follow from this and are worth stating explicitly:
+
+- A posting older than `CANDIDATE_HISTORY_DAYS` is not re-evaluated by a rebuild and cannot be selected as a candidate for a newer posting. If a genuine repost gap exceeds that window, the newer occurrence becomes a fresh `original` root rather than being linked to the older history; the canonical group effectively restarts at the window boundary instead of spanning it.
+- `RepostEvent` rows are replaced, not appended, for every job processed by a rebuild. They describe the current classification's supporting detail, not an immutable audit log; `JobEvent` rows (created, title/description/salary changes, reactivation) remain the append-only historical record and are never deleted by a rebuild.
+
 ## Source-aware canonical display
 
 Source duplication and role-history classification are related but distinct:

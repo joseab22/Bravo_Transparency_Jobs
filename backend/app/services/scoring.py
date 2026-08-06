@@ -322,7 +322,7 @@ class ScoringService:
         if evidence < 0.50:
             concern_factors.append("limited supporting evidence")
         if days_active >= 90:
-            concern_factors.append("a long- unning listing")
+            concern_factors.append("a long-running listing")
 
         if score >= 85:
             reason = join_items(positive_factors[:3]) or "several positive hiring signals"

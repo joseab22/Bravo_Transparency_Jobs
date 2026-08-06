@@ -18,6 +18,7 @@ from app.core.config import settings
 from app.core.time import utc_now
 from app.models.models import JobPosting, LocationCache
 from app.services.normalizer import normalize_location_text, normalize_metro_area
+from app.services.repost_detector import SCORE_FIELDS
 
 log = structlog.get_logger()
 
@@ -166,7 +167,11 @@ async def enrich_locations(db: AsyncSession, limit: int | None = None) -> dict:
                     metro_area=cached.metro_area,
                     latitude=cached.latitude,
                     longitude=cached.longitude,
-                    active_hiring_confidence=None,
+                    # A metro area change can change which SalaryBenchmark row
+                    # is preferred, not just active_hiring_confidence, so every
+                    # score field must be invalidated together, matching every
+                    # other invalidation site in the codebase.
+                    **{field: None for field in SCORE_FIELDS},
                 )
             )
             updated_jobs += result.rowcount or 0

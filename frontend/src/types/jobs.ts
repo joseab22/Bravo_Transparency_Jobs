@@ -108,6 +108,7 @@ export interface JobFilters {
   active_hiring_min?: number;
   applicant_max?: number;
   max_age_days?: number;
+  clearance_required?: boolean;
   collapse_canonical?: boolean;
   sort_by?: string;
   sort_dir?: "asc" | "desc";

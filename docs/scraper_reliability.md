@@ -69,4 +69,6 @@ This allows a large feed to make durable progress without performing model downl
 
 A source task may ingest partial results after an upstream rate limit or after the protected budget stops a run. A single failed or partial run therefore does not immediately mark absent listings inactive. The optional stale-job task uses a conservative window and is disabled by default during initial testing.
 
+Simplify is the one exception with a real conclusive signal: its feed marks a listing `is_closed`/inactive explicitly. That signal deactivates a matching existing row directly (with a recorded event explaining why), independent of the stale-job task. A record with no matching existing row is not used to create one -- there is nothing to deactivate.
+
 A returned row count is not a unique-job count. Query overlap, repeated daily observations, and several publishers can all refer to the same canonical opening.

@@ -66,6 +66,12 @@ async def load_canonical_sources(
 
     aggregated: dict[int, dict[str, dict]] = defaultdict(dict)
     for member in members:
+        if not member.is_active:
+            # Defense in depth: the query above already scopes to active rows,
+            # but this loop must not depend solely on that condition being
+            # reconstructed correctly by every current and future caller.
+            continue
+
         group_id = canonical_group_id(member)
 
         sightings = list(member.source_sightings)

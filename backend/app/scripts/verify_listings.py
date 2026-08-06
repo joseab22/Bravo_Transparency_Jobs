@@ -22,18 +22,12 @@ from app.core.time import utc_now
 from app.db.session import AsyncSessionLocal
 from app.models.models import JobEvent, JobPosting
 from app.services.listing_verification import ListingAvailabilityVerifier
+from app.services.repost_detector import SCORE_FIELDS
 
 log = structlog.get_logger()
 CHECK_EVENT = "availability_checked"
 EXPIRED_EVENT = "expired"
 REACTIVATED_EVENT = "reactivated"
-SCORE_FIELDS = (
-    "ghost_job_probability", "ghost_confidence", "health_score",
-    "competition_score", "interview_opportunity_score", "salary_fairness_score",
-    "market_salary", "stability_score", "activity_score",
-    "active_hiring_confidence", "description_change_score", "applicant_trend",
-    "salary_trend",
-)
 
 
 def parse_args() -> argparse.Namespace:

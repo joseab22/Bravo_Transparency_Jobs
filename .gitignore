@@ -421,3 +421,17 @@ playwright/.auth/
 *.orig
 *.rej
 
+# =============================================================================
+# CLAUDE CODE LOCAL SETTINGS
+# =============================================================================
+
+# Machine-specific Claude permissions and sandbox rules
+.claude/settings.local.json
+
+# Personal Claude instructions that should not be shared
+CLAUDE.local.md
+
+# Project-level AI assistant instructions and generated audit trail --
+# kept local only, never committed or pushed.
+CLAUDE.md
+docs/audit/

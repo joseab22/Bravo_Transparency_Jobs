@@ -11,6 +11,7 @@ from typing import Any, Iterable, Optional
 
 import structlog
 from sqlalchemy import and_, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -23,15 +24,9 @@ from app.models.models import (
 from app.services.normalizer import (
     calculate_days_active, normalize_company_name, normalize_source_url, prepare_job_record,
 )
+from app.services.repost_detector import SCORE_FIELDS
 
 log = structlog.get_logger()
-SCORE_FIELDS = (
-    "ghost_job_probability", "ghost_confidence", "health_score",
-    "competition_score", "interview_opportunity_score", "salary_fairness_score",
-    "market_salary", "stability_score", "activity_score",
-    "active_hiring_confidence", "description_change_score", "applicant_trend",
-    "salary_trend",
-)
 
 
 def _desc_hash(text: str) -> str:
@@ -82,9 +77,22 @@ async def _prepare_company_cache(
             website=(str(seed.get("company_website"))[:500] if seed.get("company_website") else None),
             industry=(str(seed.get("industry"))[:100] if seed.get("industry") else None),
         )
-        db.add(company)
+        try:
+            async with db.begin_nested():
+                db.add(company)
+                await db.flush()
+        except IntegrityError:
+            # A concurrent ingestion run (a different source's scrape task)
+            # created the same normalized company between our lookup above
+            # and this insert. Use its row instead of failing the whole batch.
+            result = await db.execute(
+                select(Company).where(Company.name_normalized == normalized)
+            )
+            existing = result.scalar_one_or_none()
+            if existing is None:
+                raise
+            company = existing
         cache[normalized] = company
-    await db.flush()
     return cache
 
 
@@ -257,8 +265,19 @@ def _mutable_changed(job: JobPosting, record: dict[str, Any]) -> bool:
         job.salary_min != record.get("salary_min"),
         job.salary_max != record.get("salary_max"),
         job.applicant_count != record.get("applicant_count"),
+        job.location_raw != record.get("location_raw"),
+        job.remote_type != record.get("remote_type"),
+        job.employment_type != record.get("employment_type"),
         not job.is_active,
     ))
+
+
+def _location_changed(job: JobPosting, record: dict[str, Any]) -> bool:
+    return (
+        job.location_raw != record.get("location_raw")
+        or job.remote_type != record.get("remote_type")
+        or job.employment_type != record.get("employment_type")
+    )
 
 
 async def _write_snapshot(job: JobPosting, record: dict[str, Any], db: AsyncSession, *, force: bool = False) -> bool:
@@ -367,8 +386,10 @@ async def _update_existing(job: JobPosting, record: dict[str, Any], db: AsyncSes
         "salary": (job.salary_min, job.salary_max),
         "applicants": job.applicant_count,
         "active": job.is_active,
+        "location": (job.location_raw, job.remote_type, job.employment_type),
     }
     changed = _mutable_changed(job, record)
+    location_changed = _location_changed(job, record)
 
     if record["source"] == job.source:
         job.source_url = record.get("source_url") or job.source_url
@@ -406,6 +427,16 @@ async def _update_existing(job: JobPosting, record: dict[str, Any], db: AsyncSes
         db.add(JobEvent(job_posting_id=job.id, event_type=EventType.salary_changed.value, source=job.source, payload={"old": old["salary"], "new": [job.salary_min, job.salary_max]}))
     if old["applicants"] is not None and job.applicant_count is not None and job.applicant_count - old["applicants"] > 200:
         db.add(JobEvent(job_posting_id=job.id, event_type=EventType.applicant_spike.value, source=job.source, payload={"old": old["applicants"], "new": job.applicant_count}))
+    if location_changed:
+        db.add(JobEvent(
+            job_posting_id=job.id,
+            event_type=EventType.location_changed.value,
+            source=job.source,
+            payload={
+                "old": {"location_raw": old["location"][0], "remote_type": old["location"][1], "employment_type": old["location"][2]},
+                "new": {"location_raw": job.location_raw, "remote_type": job.remote_type, "employment_type": job.employment_type},
+            },
+        ))
     if not old["active"]:
         db.add(JobEvent(job_posting_id=job.id, event_type=EventType.reactivated.value, source=job.source))
     return job
@@ -473,6 +504,24 @@ async def _create_new(record: dict[str, Any], company: Company, db: AsyncSession
     return job
 
 
+async def _apply_provider_closure(job: JobPosting, record: dict[str, Any], db: AsyncSession) -> None:
+    """Deactivate an existing row using the provider's own closed/inactive signal.
+
+    Mirrors verify_listings.py's URL-based deactivation: mark inactive,
+    invalidate scores, and record a JobEvent explaining why, without
+    deleting history.
+    """
+    job.is_active = False
+    _invalidate_scores(job)
+    db.add(JobEvent(
+        job_posting_id=job.id,
+        event_type=EventType.expired.value,
+        source=record.get("source") or job.source,
+        payload={"method": "provider_reported_closed"},
+        description="The collection provider's feed reported this listing as closed or inactive.",
+    ))
+
+
 async def upsert_job(
     raw: dict[str, Any],
     db: AsyncSession,
@@ -480,13 +529,23 @@ async def upsert_job(
     prepared: bool = False,
     company: Optional[Company] = None,
     prefetched: Optional[dict[str, dict[tuple[Any, ...], JobPosting]]] = None,
-) -> tuple[JobPosting, bool]:
+) -> tuple[Optional[JobPosting], str]:
     record = raw if prepared else prepare_job_record(raw)
     company = company or await get_or_create_company(record["company_name"], db)
     existing = await _find_existing(record, company.id, db, prefetched)
+
+    if record.get("provider_reports_closed"):
+        # A conclusive negative signal from the provider itself: act on it if
+        # we have a matching row to deactivate, otherwise there is nothing to
+        # do (creating a new inactive row would be pointless).
+        if existing and existing.is_active:
+            await _apply_provider_closure(existing, record, db)
+            return existing, "closed"
+        return existing, "noop"
+
     if existing:
         job = await _update_existing(existing, record, db)
-        return job, False
+        return job, "updated"
     job = await _create_new(record, company, db)
     if prefetched is not None:
         if job.external_id:
@@ -495,11 +554,11 @@ async def upsert_job(
             prefetched["provider_external"][(provider, job.external_id, job.company_id)] = job
         if job.source_url:
             prefetched["urls"][(job.source, job.source_url, job.company_id)] = job
-    return job, True
+    return job, "created"
 
 
 async def ingest_jobs(jobs: list[dict[str, Any]], db: AsyncSession) -> dict[str, int]:
-    created = updated = errors = 0
+    created = updated = errors = closed = 0
     batch_size = settings.ingest_batch_size
 
     records: list[dict[str, Any]] = []
@@ -516,7 +575,7 @@ async def ingest_jobs(jobs: list[dict[str, Any]], db: AsyncSession) -> dict[str,
             )
 
     if not records:
-        return {"total": len(jobs), "created": 0, "updated": 0, "errors": errors}
+        return {"total": len(jobs), "created": 0, "updated": 0, "errors": errors, "closed": 0}
 
     company_cache = await _prepare_company_cache(records, db)
     prefetched = await _prefetch_existing_jobs(records, company_cache, db)
@@ -525,15 +584,16 @@ async def ingest_jobs(jobs: list[dict[str, Any]], db: AsyncSession) -> dict[str,
         try:
             company = company_cache[normalize_company_name(record["company_name"])]
             async with db.begin_nested():
-                _, is_new = await upsert_job(
+                _, status = await upsert_job(
                     record,
                     db,
                     prepared=True,
                     company=company,
                     prefetched=prefetched,
                 )
-            created += int(is_new)
-            updated += int(not is_new)
+            created += int(status == "created")
+            updated += int(status == "updated")
+            closed += int(status == "closed")
         except Exception as exc:
             errors += 1
             log.error(
@@ -559,7 +619,8 @@ async def ingest_jobs(jobs: list[dict[str, Any]], db: AsyncSession) -> dict[str,
                 created=created,
                 updated=updated,
                 errors=errors,
+                closed=closed,
             )
 
     await db.commit()
-    return {"total": len(jobs), "created": created, "updated": updated, "errors": errors}
+    return {"total": len(jobs), "created": created, "updated": updated, "errors": errors, "closed": closed}

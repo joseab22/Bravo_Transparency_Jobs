@@ -10,12 +10,6 @@ Put the OpenWeb Ninja API key only in:
 backend/.env
 ```
 
-On Jose's Mac repository, the full path is:
-
-```text
-backend/.env
-```
-
 ```env
 OPENWEBNINJA_API_KEY=your_openwebninja_key_here
 ```

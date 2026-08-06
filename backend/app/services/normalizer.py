@@ -303,6 +303,17 @@ SPECIALTY_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
     ("detection_response", (r"\bdetection and response\b", r"\bincident response\b", r"\bsoc\b")),
     ("quality", (r"\bqa\b", r"\bquality assurance\b", r"\bsoftware test\b")),
     ("test_automation", (r"\btest automation\b", r"\bautomation test\b", r"\bsdet\b")),
+    ("security_clearance", (
+        r"\btop secret\b",
+        r"\bts[\s/-]*sci\b",
+        r"\bsecret clearance\b",
+        r"\bsecurity clearance\b",
+        r"\bclearance required\b",
+        r"\bclearance eligib(?:le|ility)\b",
+        r"\b(?:dod|department of defense|government) clearance\b",
+        r"\bpublic trust\b",
+        r"\bpolygraph\b",
+    )),
 
     # Systems, hardware, networking, and specialized engineering
     ("embedded", (r"\bembedded\b",)),
@@ -373,7 +384,7 @@ IDENTITY_DEFINING_SPECIALIZATIONS: frozenset[str] = frozenset({
     "scala", "kotlin", "swift", "payments", "fraud", "growth", "fintech",
     "healthcare", "ecommerce", "adtech", "gaming", "blockchain",
     "forward_deployed", "web", "business_systems", "quant_research",
-    "quant_development", "quant_trading",
+    "quant_development", "quant_trading", "security_clearance",
 })
 
 
@@ -392,6 +403,9 @@ PRIMARY_IDENTITY_SPECIALIZATIONS: frozenset[str] = frozenset({
     "ecommerce", "adtech", "gaming", "blockchain",
     "forward_deployed", "web", "business_systems", "quant_research",
     "quant_development", "quant_trading",
+    # A materially different clearance requirement can indicate a distinct
+    # opening even when every other title signal matches.
+    "security_clearance",
 })
 
 

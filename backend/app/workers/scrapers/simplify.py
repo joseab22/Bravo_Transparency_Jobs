@@ -12,6 +12,33 @@ from app.workers.scrapers.base import BaseScraperAdapter
 
 log = structlog.get_logger()
 
+_MIN_PLAUSIBLE_ANNUAL_SALARY = 1_000
+
+
+def _parse_salary_values(text: str) -> list[int]:
+    """Extract plausible annual-salary figures from free-form salary text.
+
+    Handles comma-grouped ("$95,000"), ungrouped ("$95000"), and "k"-suffixed
+    ("100k") figures uniformly, unlike a comma-grouping-only regex, which
+    silently splits an ungrouped number into unrelated fragments. Figures
+    below a plausible annual-salary floor are dropped rather than kept as
+    wrong data.
+    """
+    values: list[int] = []
+    for number_text, k_suffix in re.findall(r"\$?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*([kK])?", text):
+        if not number_text:
+            continue
+        try:
+            number = float(number_text.replace(",", ""))
+        except ValueError:
+            continue
+        if k_suffix:
+            number *= 1000
+        if number < _MIN_PLAUSIBLE_ANNUAL_SALARY:
+            continue
+        values.append(round(number))
+    return values
+
 
 class SimplifyScraper(BaseScraperAdapter):
     source_name = "simplify"
@@ -32,10 +59,12 @@ class SimplifyScraper(BaseScraperAdapter):
         return await super().scrape(list(self.feeds))
 
     def parse_job(self, raw: dict) -> Optional[dict]:
+        # A closed/inactive record is not silently dropped: it still carries
+        # conclusive negative evidence for whatever existing row it matches
+        # (see provider_reports_closed below), even though it is never used
+        # to create a new row of its own.
         closed = str(raw.get("is_closed", "false")).lower() in {"true", "1", "yes"}
         inactive = str(raw.get("active", "true")).lower() in {"false", "0", "no"}
-        if closed or inactive:
-            return None
         title = raw.get("title") or raw.get("role") or ""
         company = raw.get("company_name") or raw.get("company") or ""
         if isinstance(company, dict):
@@ -58,7 +87,7 @@ class SimplifyScraper(BaseScraperAdapter):
         date_posted = parse_datetime(raw.get("date_posted") or raw.get("date") or raw.get("created_at"))
         employment = normalize_employment_type(raw.get("type"), title)
         salary_text = str(raw.get("salary") or "")
-        salary_values = [int(x.replace(",", "")) for x in re.findall(r"\$?([0-9]{2,3}(?:,[0-9]{3})?)", salary_text)]
+        salary_values = _parse_salary_values(salary_text)
 
         return {
             "source": self.source_name,
@@ -75,6 +104,7 @@ class SimplifyScraper(BaseScraperAdapter):
             "description_raw": description,
             "skills": extract_skills(description),
             "date_posted": date_posted,
+            **({"provider_reports_closed": True} if (closed or inactive) else {}),
         }
 
 

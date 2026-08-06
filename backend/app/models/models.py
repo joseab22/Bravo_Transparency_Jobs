@@ -56,6 +56,7 @@ class EventType(str, enum.Enum):
     salary_changed = "salary_changed"
     title_changed = "title_changed"
     description_changed = "description_changed"
+    location_changed = "location_changed"
     expired = "expired"
     reactivated = "reactivated"
     source_added = "source_added"

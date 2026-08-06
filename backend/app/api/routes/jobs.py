@@ -54,11 +54,22 @@ DETAIL_OPTIONS = LIST_OPTIONS + [selectinload(JobPosting.repost_events), selecti
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 
+def _has_specialization_tag(tag: str):
+    """Match `tag` as one of the comma-joined values in JobPosting.specialization
+    (e.g. "backend,security_clearance"), not merely as a substring."""
+    return or_(
+        JobPosting.specialization == tag,
+        JobPosting.specialization.ilike(f"{tag},%"),
+        JobPosting.specialization.ilike(f"%,{tag}"),
+        JobPosting.specialization.ilike(f"%,{tag},%"),
+    )
+
+
 def _filters(
     q=None, industry=None, job_family=None, job_board=None, classification=None, remote_type=None,
     seniority=None, employment_type=None, metro_area=None, salary_min=None,
     salary_max=None, ghost_max=None, health_min=None, active_hiring_min=None, applicant_max=None,
-    max_age_days=None,
+    max_age_days=None, clearance_required=None,
 ):
     values = [JobPosting.is_active.is_(True)]
     if q:
@@ -125,6 +136,11 @@ def _filters(
                 JobPosting.date_first_seen >= cutoff,
             ),
         ))
+    if clearance_required is not None:
+        has_clearance = _has_specialization_tag("security_clearance")
+        values.append(has_clearance if clearance_required else or_(
+            JobPosting.specialization.is_(None), ~has_clearance,
+        ))
     return values
 
 
@@ -187,6 +203,7 @@ async def list_jobs(
     active_hiring_min: Annotated[float | None, Query(ge=0, le=100)] = None,
     applicant_max: Annotated[int | None, Query(ge=0, le=1_000_000)] = None,
     max_age_days: Annotated[int | None, Query(ge=1, le=3650)] = None,
+    clearance_required: bool | None = None,
     collapse_canonical: bool = True,
     sort_by: SortField = "active_hiring_confidence",
     sort_dir: SortDirection = "desc",
@@ -197,7 +214,7 @@ async def list_jobs(
     conditions = _filters(
         q, industry, job_family, job_board, classification, remote_type, seniority,
         employment_type, metro_area, salary_min, salary_max, ghost_max,
-        health_min, active_hiring_min, applicant_max, max_age_days,
+        health_min, active_hiring_min, applicant_max, max_age_days, clearance_required,
     )
     column = SORT_COLUMNS[sort_by]
     order = asc(column).nulls_last() if sort_dir == "asc" else desc(column).nulls_last()

@@ -43,6 +43,8 @@ collapse_canonical=true   # default: one representative card per canonical group
 collapse_canonical=false  # every stored posting row
 ```
 
+The representative chosen for a canonical group is always the eligible member with the highest `active_hiring_confidence` (tie-broken by most recent `date_last_seen`, then lowest id), regardless of the request's `sort_by` value. Sorting by a different field (salary, applicant count, posting date, and so on) changes result *order*, not which member of each group is shown; the representative's own value for the requested field is what gets sorted on.
+
 `canonical_sources` contains one item per distinct apply link with:
 
 - publisher key and display name;
