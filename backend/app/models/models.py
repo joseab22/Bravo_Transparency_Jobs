@@ -63,6 +63,14 @@ class EventType(str, enum.Enum):
     ghost_flagged = "ghost_flagged"
 
 
+class ApplicationStatus(str, enum.Enum):
+    applied = "applied"
+    interviewing = "interviewing"
+    offer = "offer"
+    rejected = "rejected"
+    withdrawn = "withdrawn"
+
+
 class Company(Base):
     __tablename__ = "companies"
 
@@ -295,3 +303,77 @@ class LocationCache(Base):
     last_attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
+
+
+# device_id identifies an anonymous browser (a UUID issued client-side and sent
+# as a request header). JobLens has no login system, so it is the only owner
+# key available for the per-user tables below.
+
+
+class JobFavorite(Base):
+    __tablename__ = "job_favorites"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    job_posting_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    job_posting: Mapped["JobPosting"] = relationship(lazy="selectin")
+    __table_args__ = (UniqueConstraint("device_id", "job_posting_id", name="uq_job_favorites_device_job"),)
+
+
+class JobApplication(Base):
+    __tablename__ = "job_applications"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    job_posting_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default=ApplicationStatus.applied.value)
+    applied_date: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
+    job_posting: Mapped["JobPosting"] = relationship(lazy="selectin")
+    __table_args__ = (UniqueConstraint("device_id", "job_posting_id", name="uq_job_applications_device_job"),)
+
+
+class JobNote(Base):
+    __tablename__ = "job_notes"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    job_posting_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), nullable=False, index=True)
+    note: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
+    job_posting: Mapped["JobPosting"] = relationship(lazy="selectin")
+    __table_args__ = (UniqueConstraint("device_id", "job_posting_id", name="uq_job_notes_device_job"),)
+
+
+class JobView(Base):
+    __tablename__ = "job_views"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    job_posting_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), nullable=False, index=True)
+    viewed_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
+    job_posting: Mapped["JobPosting"] = relationship(lazy="selectin")
+    __table_args__ = (
+        UniqueConstraint("device_id", "job_posting_id", name="uq_job_views_device_job"),
+        Index("ix_job_views_device_viewed", "device_id", "viewed_at"),
+    )
+
+
+class JobDismissal(Base):
+    __tablename__ = "job_dismissals"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    job_posting_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    job_posting: Mapped["JobPosting"] = relationship(lazy="selectin")
+    __table_args__ = (UniqueConstraint("device_id", "job_posting_id", name="uq_job_dismissals_device_job"),)
+
+
+class SavedSearch(Base):
+    __tablename__ = "saved_searches"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    filters: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    __table_args__ = (UniqueConstraint("device_id", "name", name="uq_saved_searches_device_name"),)

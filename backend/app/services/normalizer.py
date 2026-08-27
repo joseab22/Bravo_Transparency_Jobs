@@ -482,6 +482,17 @@ def decompose_title(raw_title: Any) -> dict[str, Any]:
             break
 
     specialties = extract_specializations(cleaned)
+    if family in {"systems administrator", "database administrator"}:
+        # The "admin" specialty pattern matches the literal word
+        # "administrator", which is also what the family match itself keyed
+        # on. For these two families it restates the family rather than
+        # adding a differentiating signal (unlike "Software Engineer -
+        # Admin", where family is unrelated and "admin" is genuinely
+        # informative) — e.g. "IT Systems Administrator (Aerospace)" and
+        # "IT Systems Administrator (Server)" would otherwise both collapse
+        # to specialization="admin" and be treated as a confirmed shared
+        # specialization signal despite naming different roles.
+        specialties = [tag for tag in specialties if tag != "admin"]
 
     seniority = extract_seniority(cleaned)
     if family:

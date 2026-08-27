@@ -10,10 +10,10 @@ from sqlalchemy import and_, asc, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.security import require_admin_key
+from app.core.security import get_optional_device_id, require_admin_key
 from app.core.time import utc_now
 from app.db.session import get_db
-from app.models.models import Company, JobPosting, JobSkill, JobSourceSighting
+from app.models.models import Company, JobApplication, JobDismissal, JobFavorite, JobNote, JobPosting, JobSkill, JobSourceSighting
 from app.schemas.jobs import ActiveHiringReasoningOut, JobPostingDetail, JobPostingListItem, MarketStats, PaginatedJobsResponse
 from app.services.scoring import ScoringService
 from app.services.source_attribution import canonical_group_id, load_canonical_sources, own_sources
@@ -69,9 +69,15 @@ def _filters(
     q=None, industry=None, job_family=None, job_board=None, classification=None, remote_type=None,
     seniority=None, employment_type=None, metro_area=None, salary_min=None,
     salary_max=None, ghost_max=None, health_min=None, active_hiring_min=None, applicant_max=None,
-    max_age_days=None, clearance_required=None,
+    max_age_days=None, clearance_required=None, device_id=None,
 ):
     values = [JobPosting.is_active.is_(True)]
+    if device_id:
+        values.append(
+            JobPosting.id.not_in(
+                select(JobDismissal.job_posting_id).where(JobDismissal.device_id == device_id)
+            )
+        )
     if q:
         search = q.strip()
         search_like = f"%{search}%"
@@ -151,6 +157,7 @@ async def _serialize_jobs(
     *,
     collapse: bool = True,
     max_age_days: int | None = None,
+    device_id: str | None = None,
 ) -> list[SchemaT]:
     if collapse:
         source_map = await load_canonical_sources(
@@ -161,6 +168,27 @@ async def _serialize_jobs(
         sources_by_job = {job.id: source_map.get(canonical_group_id(job), []) for job in jobs}
     else:
         sources_by_job = {job.id: own_sources(job) for job in jobs}
+
+    favorited_ids: set[int] = set()
+    applied_ids: set[int] = set()
+    notes_by_job: dict[int, str] = {}
+    if device_id and jobs:
+        job_ids = [job.id for job in jobs]
+        favorited_ids = set((await db.execute(
+            select(JobFavorite.job_posting_id).where(
+                JobFavorite.device_id == device_id, JobFavorite.job_posting_id.in_(job_ids)
+            )
+        )).scalars())
+        applied_ids = set((await db.execute(
+            select(JobApplication.job_posting_id).where(
+                JobApplication.device_id == device_id, JobApplication.job_posting_id.in_(job_ids)
+            )
+        )).scalars())
+        notes_by_job = dict((await db.execute(
+            select(JobNote.job_posting_id, JobNote.note).where(
+                JobNote.device_id == device_id, JobNote.job_posting_id.in_(job_ids)
+            )
+        )).all())
 
     serialized: list[SchemaT] = []
     for job in jobs:
@@ -179,6 +207,9 @@ async def _serialize_jobs(
                 update={
                     "canonical_sources": canonical_sources,
                     "active_hiring_reasoning": reasoning,
+                    "is_favorited": job.id in favorited_ids,
+                    "is_applied": job.id in applied_ids,
+                    "note": notes_by_job.get(job.id),
                 }
             )
         )
@@ -210,11 +241,13 @@ async def list_jobs(
     page: Annotated[int, Query(ge=1, le=10_000)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
     db: AsyncSession = Depends(get_db),
+    device_id: Annotated[str | None, Depends(get_optional_device_id)] = None,
 ):
     conditions = _filters(
         q, industry, job_family, job_board, classification, remote_type, seniority,
         employment_type, metro_area, salary_min, salary_max, ghost_max,
         health_min, active_hiring_min, applicant_max, max_age_days, clearance_required,
+        device_id,
     )
     column = SORT_COLUMNS[sort_by]
     order = asc(column).nulls_last() if sort_dir == "asc" else desc(column).nulls_last()
@@ -265,6 +298,7 @@ async def list_jobs(
         JobPostingListItem,
         collapse=collapse_canonical,
         max_age_days=max_age_days,
+        device_id=device_id,
     )
     return PaginatedJobsResponse(
         total=total,

@@ -214,7 +214,9 @@ def test_closed_role_in_different_onsite_metro_is_not_repost():
 
 def test_orm_matches_migrations():
     configure_mappers()
-    assert len(Base.metadata.tables) == 10
+    # 10 original tables + job_favorites, job_applications, job_notes, job_views,
+    # job_dismissals (migration 0007) + saved_searches (migration 0008).
+    assert len(Base.metadata.tables) == 16
     for name in ("identity_fingerprint", "canonical_job_id", "listing_classification", "job_family", "active_hiring_confidence"):
         assert name in JobPosting.__table__.columns
     assert len(LocationCache.__table__.columns) == 16

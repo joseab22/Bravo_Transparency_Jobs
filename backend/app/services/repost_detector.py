@@ -143,23 +143,33 @@ def _locations_compatible(a: JobPosting, b: JobPosting, *, parallel: bool) -> bo
 
     exact_left = _specific_location(a)
     exact_right = _specific_location(b)
+    if exact_left and exact_right and exact_left == exact_right:
+        return True
 
-    if parallel:
-        # Simultaneous onsite openings with different named locations are
-        # separate requisitions, even when both locations belong to the same
-        # broader metro area.
-        if exact_left and exact_right:
-            return exact_left == exact_right
-        metro_left = (normalize_location_text(a.metro_area) or "").lower()
-        metro_right = (normalize_location_text(b.metro_area) or "").lower()
-        return bool(metro_left and metro_right and metro_left == metro_right)
+    # A first-party employer ATS assigns a distinct internal record only when
+    # a genuinely new requisition is opened; it does not duplicate-post one
+    # real opening under several of its own job IDs. Two company-site
+    # postings whose named locations differ (or are unparsed) are therefore
+    # treated as separate roles rather than allowed through the proximity/
+    # metro fallback below, which exists specifically to catch third-party
+    # aggregators (e.g. Lensa-syndicated boards) that legitimately republish
+    # one real opening across several nearby-town landing pages.
+    if (getattr(a, "source", None) or "") == "company-site" and (getattr(b, "source", None) or "") == "company-site":
+        return False
 
-    # A later repost may move within a local hiring area after the earlier
-    # requisition closes, so proximity remains useful only for repost matching.
+    # Proximity is useful for both parallel and repost matching: a company may
+    # have several simultaneous openings, or a later repost may move within a
+    # local hiring area, each tagged to a nearby town rather than the original
+    # named location. Whether the pair is ultimately classified as parallel or
+    # repost is decided by the timing check in classify_pair, not by location
+    # strictness, so both paths share the same location evidence here. This
+    # still runs even when exact_left/exact_right differ (real coordinates are
+    # stronger evidence than two mismatched town labels for third-party
+    # sources), which is exactly what the company-site block above exists to
+    # prevent for an employer's own first-party postings.
     if locations_in_same_cluster(a.latitude, a.longitude, b.latitude, b.longitude):
         return True
-    if exact_left and exact_right:
-        return exact_left == exact_right
+
     metro_left = (normalize_location_text(a.metro_area) or "").lower()
     metro_right = (normalize_location_text(b.metro_area) or "").lower()
     return bool(metro_left and metro_right and metro_left == metro_right)
@@ -234,7 +244,20 @@ class RepostDetectionService:
 
             if desc_sim is not None and desc_sim < settings.description_similarity_threshold and raw_title_sim < 0.75:
                 return False
-            return raw_title_sim >= 0.72 or normalized_title_sim >= settings.similarity_threshold
+            if spec_a and spec_b:
+                # Both titles carry a recognized, non-conflicting specialization
+                # tag (specialization_sets_conflict already passed above) — a
+                # genuine shared signal beyond the bare family match.
+                return raw_title_sim >= 0.72 or normalized_title_sim >= settings.similarity_threshold
+            # Neither title has a recognized specialization tag. decompose_title
+            # sets title_normalized to the bare job_family for both sides once a
+            # family matches, so normalized_title_sim is always 1.0 here and
+            # cannot distinguish anything ("Sr. Product Manager (Incentives and
+            # Variable Marketing)" and "Sr. Product Manager, Vehicle Health
+            # Alerts" both normalize to "Product Manager"). Require strong
+            # evidence from the actual title text instead of trusting a
+            # structurally-uninformative normalized-title comparison.
+            return raw_title_sim >= 0.90
         if normalized_title_sim < settings.similarity_threshold:
             return False
         return desc_sim is None or desc_sim >= settings.description_similarity_threshold

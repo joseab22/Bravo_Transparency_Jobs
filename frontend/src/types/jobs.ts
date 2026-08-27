@@ -4,6 +4,8 @@ export interface Company {
   industry?: string | null;
   hiring_intensity?: number | null;
   ghost_job_rate?: number | null;
+  website?: string | null;
+  logo_url?: string | null;
 }
 
 export interface Skill {
@@ -80,6 +82,19 @@ export interface JobListItem {
   activity_score?: number | null;
   canonical_sources: CanonicalSource[];
   skills: Skill[];
+  is_favorited: boolean;
+  is_applied: boolean;
+  note?: string | null;
+}
+
+export interface JobDetail extends JobListItem {
+  description_raw?: string | null;
+  education_required?: string | null;
+  experience_years_min?: number | null;
+  experience_years_max?: number | null;
+  market_salary?: number | null;
+  stability_score?: number | null;
+  department?: string | null;
 }
 
 export interface PaginatedJobs {
@@ -88,6 +103,61 @@ export interface PaginatedJobs {
   page_size: number;
   pages: number;
   results: JobListItem[];
+}
+
+export type ApplicationStatus = "applied" | "interviewing" | "offer" | "rejected" | "withdrawn";
+
+export interface FavoriteEntry {
+  job_posting_id: number;
+  created_at: string;
+  job: JobListItem;
+}
+
+export interface ApplicationEntry {
+  job_posting_id: number;
+  status: ApplicationStatus;
+  applied_date?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+  job: JobListItem;
+}
+
+export interface ApplicationInput {
+  status: ApplicationStatus;
+  applied_date?: string | null;
+  notes?: string | null;
+}
+
+export interface NoteEntry {
+  job_posting_id: number;
+  // note is the standalone note, editable from the Notes tab. application_note
+  // mirrors JobApplication.notes for the same job when present -- it is
+  // read-only here; it's only ever edited from the Applications tab.
+  note?: string | null;
+  application_note?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  job: JobListItem;
+}
+
+export interface RecentlyViewedEntry {
+  job_posting_id: number;
+  viewed_at: string;
+  job: JobListItem;
+}
+
+export interface DismissalEntry {
+  job_posting_id: number;
+  created_at: string;
+  job: JobListItem;
+}
+
+export interface SavedSearchEntry {
+  id: number;
+  name: string;
+  filters: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface JobFilters {

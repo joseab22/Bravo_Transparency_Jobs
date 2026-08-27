@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
+
+from app.services.company_logo import resolve_logo_url
 
 
 class ORMModel(BaseModel):
@@ -86,6 +88,12 @@ class CompanyOut(ORMModel):
     avg_reposts: Optional[float] = None
     median_time_to_fill: Optional[int] = None
     hiring_intensity: Optional[float] = None
+    website: Optional[str] = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def logo_url(self) -> Optional[str]:
+        return resolve_logo_url(self.website)
 
 
 class JobPostingListItem(ORMModel):
@@ -136,6 +144,9 @@ class JobPostingListItem(ORMModel):
     source_sightings: list[SourceSightingOut] = Field(default_factory=list)
     canonical_sources: list[CanonicalSourceOut] = Field(default_factory=list)
     skills: list[SkillOut] = Field(default_factory=list)
+    is_favorited: bool = False
+    is_applied: bool = False
+    note: Optional[str] = None
 
 
 class JobPostingDetail(JobPostingListItem):
