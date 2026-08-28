@@ -88,6 +88,22 @@ export interface JobListItem {
   note?: string | null;
 }
 
+export interface RepostEvent {
+  occurrence_number: number;
+  date_seen: string;
+  source?: string | null;
+  days_since_previous?: number | null;
+}
+
+export interface JobEvent {
+  id: number;
+  event_type: string;
+  timestamp: string;
+  source?: string | null;
+  description?: string | null;
+  payload?: Record<string, unknown> | null;
+}
+
 export interface JobDetail extends JobListItem {
   description_raw?: string | null;
   education_required?: string | null;
@@ -96,6 +112,8 @@ export interface JobDetail extends JobListItem {
   market_salary?: number | null;
   stability_score?: number | null;
   department?: string | null;
+  repost_events: RepostEvent[];
+  events: JobEvent[];
 }
 
 export interface PaginatedJobs {
@@ -183,4 +201,18 @@ export interface JobFilters {
   collapse_canonical?: boolean;
   sort_by?: string;
   sort_dir?: "asc" | "desc";
+}
+
+export interface MarketStats {
+  total_active_jobs: number;
+  scored_active_jobs: number;
+  avg_active_hiring_confidence: number;
+  avg_ghost_probability: number;
+  avg_health_score: number;
+  high_ghost_risk_count: number;
+  classification_counts: { classification: string; count: number }[];
+  top_industries: { industry: string; count: number }[];
+  top_skills: { skill: string; count: number }[];
+  avg_days_active: number;
+  total_applicants: number;
 }

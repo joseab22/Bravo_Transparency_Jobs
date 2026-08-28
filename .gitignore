@@ -56,7 +56,11 @@ sdist/
 develop-eggs/
 .installed.cfg
 
-lib/
+# NOTE: a bare "lib/" rule used to live here (standard Python venv
+# boilerplate). Removed: gitignore patterns with no leading "/" match at
+# ANY depth, so it was silently swallowing frontend/src/lib/ -- the actual
+# frontend source directory -- not just a Python virtualenv's lib folder.
+# venv/ below already covers the real Python case this was meant for.
 lib64/
 MANIFEST
 
