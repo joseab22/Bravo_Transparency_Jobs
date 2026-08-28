@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 
 import { CompanyLogo } from "@/components/CompanyLogo";
-import { CheckIcon, CloseIcon, IconButton, IconToggleButton, NoteIcon, StarIcon } from "@/components/JobActionIcons";
+import { CheckIcon, CloseIcon, IconButton, IconLinkButton, IconToggleButton, LinkIcon, NoteIcon, StarIcon } from "@/components/JobActionIcons";
+import { SITE_URL } from "@/lib/seo";
+import { ListingTimeline } from "@/components/ListingTimeline";
 import { ScoreReasoningTooltip } from "@/components/ScoreReasoningTooltip";
 import { jobsApi, meApi } from "@/lib/api";
 import { ageSummary, formatSalary, postingDateLabel, safeExternalUrl, sourceLinks } from "@/lib/jobFormatting";
@@ -62,8 +64,17 @@ export function JobDetailPanel({ jobId, fallback, maxAgeDays, onFavoriteChange, 
 
   if (jobId == null) {
     return (
-      <div className="rounded-xl border border-slate-700 bg-slate-900 p-8 text-center text-sm text-slate-400 shadow-lg shadow-black/30">
-        Select a listing to see its full details here.
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-slate-700 bg-slate-900 p-8 text-center shadow-lg shadow-black/30">
+        <svg viewBox="0 0 24 24" aria-hidden="true" className="h-9 w-9 text-slate-600">
+          <path
+            d="M4 7.5A2.5 2.5 0 016.5 5h11A2.5 2.5 0 0120 7.5v9a2.5 2.5 0 01-2.5 2.5h-11A2.5 2.5 0 014 16.5v-9z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+          />
+          <path d="M4 9.5h16M9 5v4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
+        <p className="text-sm text-slate-400">Select a listing to see its full details here.</p>
       </div>
     );
   }
@@ -82,8 +93,19 @@ export function JobDetailPanel({ jobId, fallback, maxAgeDays, onFavoriteChange, 
 
   if (!job) {
     return (
-      <div className="rounded-xl border border-red-500/40 bg-red-950/40 p-4 text-sm text-red-200">
-        {error ?? "Unable to load this job."}
+      <div role="alert" className="flex items-start gap-3 rounded-xl border border-red-500/40 bg-red-950/40 p-4 text-sm text-red-200">
+        <svg viewBox="0 0 24 24" aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-red-300">
+          <path
+            d="M12 4.5l9 15.5H3l9-15.5z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinejoin="round"
+          />
+          <line x1="12" y1="10.5" x2="12" y2="14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          <circle cx="12" cy="16.8" r="0.9" fill="currentColor" />
+        </svg>
+        <span>{error ?? "Unable to load this job."}</span>
       </div>
     );
   }
@@ -91,7 +113,7 @@ export function JobDetailPanel({ jobId, fallback, maxAgeDays, onFavoriteChange, 
   return <JobDetailContent job={job} loadingMore={loading && !detail} error={error} onFavoriteChange={onFavoriteChange} onAppliedChange={onAppliedChange} onDismissed={onDismissed} />;
 }
 
-interface JobDetailContentProps {
+export interface JobDetailContentProps {
   job: JobListItem | JobDetail;
   loadingMore: boolean;
   error: string | null;
@@ -100,7 +122,7 @@ interface JobDetailContentProps {
   onDismissed?: (jobId: number) => void;
 }
 
-function JobDetailContent({ job, loadingMore, error, onFavoriteChange, onAppliedChange, onDismissed }: JobDetailContentProps) {
+export function JobDetailContent({ job, loadingMore, error, onFavoriteChange, onAppliedChange, onDismissed }: JobDetailContentProps) {
   const {
     favorited,
     applied,
@@ -202,6 +224,7 @@ function JobDetailContent({ job, loadingMore, error, onFavoriteChange, onApplied
             labelWhenOn="Edit note"
             icon={<NoteIcon />}
           />
+          <IconLinkButton href={`${SITE_URL}/jobs/${job.id}`} label="Open shareable link" icon={<LinkIcon />} />
           <IconButton pending={dismissPending} onClick={dismiss} label="Hide this listing" icon={<CloseIcon />} />
         </div>
       </div>
@@ -354,6 +377,12 @@ function JobDetailContent({ job, loadingMore, error, onFavoriteChange, onApplied
           </dl>
         )}
       </div>
+
+      {detail && (detail.events?.length > 0 || detail.repost_events?.length > 0) && (
+        <div className="mt-6 border-t border-slate-800 pt-4">
+          <ListingTimeline job={detail} />
+        </div>
+      )}
     </div>
   );
 }

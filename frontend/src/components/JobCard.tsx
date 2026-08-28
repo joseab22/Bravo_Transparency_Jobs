@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 
 import { CompanyLogo } from "@/components/CompanyLogo";
-import { CheckIcon, CloseIcon, IconButton, IconToggleButton, NoteIcon, StarIcon } from "@/components/JobActionIcons";
+import { CheckIcon, CloseIcon, IconButton, IconLinkButton, IconToggleButton, LinkIcon, NoteIcon, StarIcon } from "@/components/JobActionIcons";
+import { SITE_URL } from "@/lib/seo";
 import { ScoreReasoningTooltip } from "@/components/ScoreReasoningTooltip";
 import { meApi } from "@/lib/api";
 import {
@@ -14,6 +15,7 @@ import {
 } from "@/lib/jobFormatting";
 import { useJobActions } from "@/lib/useJobActions";
 import { SECTION_TITLE } from "@/lib/typography";
+import { CARD } from "@/lib/designSystem";
 import type { JobListItem } from "@/types/jobs";
 
 interface JobCardProps {
@@ -80,14 +82,14 @@ export function JobCard({ job, onDismissed, onFavoriteChange, onAppliedChange }:
 
   if (dismissed) {
     return (
-      <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 text-sm text-slate-400">
+      <div className={`${CARD} p-4 text-sm text-slate-400`}>
         Hidden. It will not appear in search results again.
       </div>
     );
   }
 
   return (
-    <article className="rounded-xl border border-slate-800 bg-slate-900/70 p-5">
+    <article className={`${CARD} p-5`}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 flex-1 gap-3">
           <CompanyLogo name={job.company.name} logoUrl={job.company.logo_url} />
@@ -127,6 +129,7 @@ export function JobCard({ job, onDismissed, onFavoriteChange, onAppliedChange }:
                   labelWhenOn="Edit note"
                   icon={<NoteIcon />}
                 />
+                <IconLinkButton href={`${SITE_URL}/jobs/${job.id}`} label="Open shareable link" icon={<LinkIcon />} />
                 <IconButton
                   pending={dismissPending}
                   onClick={dismiss}

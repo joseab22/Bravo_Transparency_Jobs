@@ -5,6 +5,7 @@ import { TabEmpty, TabError, TabLoading } from "@/components/profile/TabStates";
 import { meApi } from "@/lib/api";
 import { useAsyncList } from "@/lib/useAsyncList";
 import { COMPACT_TITLE } from "@/lib/typography";
+import { CARD } from "@/lib/designSystem";
 import type { DismissalEntry } from "@/types/jobs";
 
 export function HiddenTab() {
@@ -79,7 +80,7 @@ function HiddenRow({ entry, onRestored }: { entry: DismissalEntry; onRestored: (
   }
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+    <div className={`${CARD} p-4`}>
       <div className="flex items-center gap-3">
         <CompanyLogo name={entry.job.company.name} logoUrl={entry.job.company.logo_url} size={32} />
 

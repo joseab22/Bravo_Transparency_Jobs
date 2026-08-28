@@ -64,6 +64,30 @@ export function IconButton({ pending, onClick, label, icon }: IconButtonProps) {
   );
 }
 
+interface IconLinkButtonProps {
+  href: string;
+  label: string;
+  icon: ReactNode;
+}
+
+// Same visual/tooltip treatment as IconButton, but an <a> for navigation
+// (opening the standalone, shareable job page) rather than an in-page action.
+export function IconLinkButton({ href, label, icon }: IconLinkButtonProps) {
+  return (
+    <Tooltip label={label}>
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={label}
+        className="block rounded-lg p-2 text-slate-400 outline-none ring-cyan-300 transition hover:bg-slate-800 hover:text-slate-200 focus-visible:ring-2"
+      >
+        {icon}
+      </a>
+    </Tooltip>
+  );
+}
+
 export function StarIcon({ filled }: { filled: boolean }) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
@@ -101,6 +125,21 @@ export function CheckIcon() {
         fill="none"
         stroke="currentColor"
         strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function LinkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+      <path
+        d="M9.5 14.5l5-5M10 8h-.5A4.5 4.5 0 005 12.5v0A4.5 4.5 0 009.5 17H10M14 16h.5a4.5 4.5 0 004.5-4.5v0A4.5 4.5 0 0014.5 7H14"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
         strokeLinecap="round"
         strokeLinejoin="round"
       />

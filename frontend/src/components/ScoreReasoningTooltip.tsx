@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { ConfidenceGauge } from "@/components/ConfidenceGauge";
 import { confidenceLabel, fallbackScoreReasoning, signedPoints } from "@/lib/jobFormatting";
 import type { JobListItem } from "@/types/jobs";
 
@@ -7,19 +8,11 @@ export function ScoreReasoningTooltip({ job }: { job: JobListItem }) {
   const [open, setOpen] = useState(false);
   const confidence = job.active_hiring_confidence;
   const reasoning = job.active_hiring_reasoning ?? fallbackScoreReasoning(job);
-  const scoreClass =
-    confidence == null
-      ? "unknown"
-      : confidence >= 70
-        ? "high"
-        : confidence >= 45
-          ? "medium"
-          : "low";
 
   if (confidence == null || !reasoning) {
     return (
-      <div className="shrink-0 text-left sm:text-right">
-        <p className={`confidence ${scoreClass}`}>N/A</p>
+      <div className="flex shrink-0 items-center gap-2 text-left">
+        <ConfidenceGauge confidence={null} size={44} />
         <p className="text-sm text-slate-400">Not scored</p>
       </div>
     );
@@ -31,7 +24,7 @@ export function ScoreReasoningTooltip({ job }: { job: JobListItem }) {
 
   return (
     <div
-      className="group relative z-20 shrink-0 text-left hover:z-50 focus-within:z-50 sm:text-right"
+      className="group relative z-20 shrink-0 text-left hover:z-50 focus-within:z-50"
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
           setOpen(false);
@@ -44,11 +37,12 @@ export function ScoreReasoningTooltip({ job }: { job: JobListItem }) {
         aria-describedby={`score-reasoning-${job.id}`}
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className="rounded-lg px-2 py-1 text-left outline-none ring-cyan-300 transition hover:bg-slate-800 focus-visible:ring-2 sm:text-right"
+        className="flex items-center gap-2 rounded-lg px-2 py-1 text-left outline-none ring-cyan-300 transition hover:bg-slate-800 focus-visible:ring-2"
       >
-        <span className={`confidence ${scoreClass}`}>{Math.round(confidence)}</span>
-        <span className="block text-sm text-slate-400">
-          {confidenceLabel(confidence)} · Why?
+        <ConfidenceGauge confidence={confidence} size={44} />
+        <span className="text-sm text-slate-400">
+          {confidenceLabel(confidence)}
+          <span className="block font-medium text-cyan-300">Why? →</span>
         </span>
       </button>
 

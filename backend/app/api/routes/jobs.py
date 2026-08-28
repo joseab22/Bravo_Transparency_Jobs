@@ -312,15 +312,25 @@ async def list_jobs(
 @router.get("/stats", response_model=MarketStats)
 async def market_stats(db: AsyncSession = Depends(get_db)):
     active = JobPosting.is_active.is_(True)
-    total = await db.scalar(select(func.count(JobPosting.id)).where(active)) or 0
-    scored = await db.scalar(select(func.count(JobPosting.id)).where(active, JobPosting.active_hiring_confidence.is_not(None))) or 0
 
-    async def avg(column):
-        value = await db.scalar(select(func.avg(column)).where(active))
-        return float(value or 0)
+    # All scalar aggregates in one round trip: func.count(column) (as opposed
+    # to func.count(id)) already skips NULLs, which is exactly "scored"
+    # (active_hiring_confidence IS NOT NULL); the FILTER clause folds the
+    # high-ghost-risk count in too, so this single query replaces what were
+    # six separate ones.
+    total, scored, avg_confidence, avg_ghost, avg_health, avg_days, high_ghost, total_apps = (await db.execute(
+        select(
+            func.count(JobPosting.id),
+            func.count(JobPosting.active_hiring_confidence),
+            func.avg(JobPosting.active_hiring_confidence),
+            func.avg(JobPosting.ghost_job_probability),
+            func.avg(JobPosting.health_score),
+            func.avg(JobPosting.days_active),
+            func.count(JobPosting.id).filter(JobPosting.ghost_job_probability >= 0.60),
+            func.sum(JobPosting.applicant_count),
+        ).where(active)
+    )).one()
 
-    high_ghost = await db.scalar(select(func.count(JobPosting.id)).where(active, JobPosting.ghost_job_probability >= 0.60)) or 0
-    total_apps = await db.scalar(select(func.sum(JobPosting.applicant_count)).where(active)) or 0
     classification_rows = (await db.execute(
         select(JobPosting.listing_classification, func.count(JobPosting.id)).where(active)
         .group_by(JobPosting.listing_classification).order_by(func.count(JobPosting.id).desc())
@@ -334,17 +344,17 @@ async def market_stats(db: AsyncSession = Depends(get_db)):
         .group_by(JobSkill.skill).order_by(func.count(JobSkill.id).desc()).limit(10)
     )).all()
     return MarketStats(
-        total_active_jobs=total,
-        scored_active_jobs=scored,
-        avg_active_hiring_confidence=round(await avg(JobPosting.active_hiring_confidence), 1),
-        avg_ghost_probability=round(await avg(JobPosting.ghost_job_probability), 3),
-        avg_health_score=round(await avg(JobPosting.health_score), 1),
-        high_ghost_risk_count=high_ghost,
+        total_active_jobs=total or 0,
+        scored_active_jobs=scored or 0,
+        avg_active_hiring_confidence=round(float(avg_confidence or 0), 1),
+        avg_ghost_probability=round(float(avg_ghost or 0), 3),
+        avg_health_score=round(float(avg_health or 0), 1),
+        high_ghost_risk_count=high_ghost or 0,
         classification_counts=[{"classification": key, "count": count} for key, count in classification_rows],
         top_industries=[{"industry": key, "count": count} for key, count in industry_rows],
         top_skills=[{"skill": key, "count": count} for key, count in skill_rows],
-        avg_days_active=round(await avg(JobPosting.days_active), 1),
-        total_applicants=int(total_apps),
+        avg_days_active=round(float(avg_days or 0), 1),
+        total_applicants=int(total_apps or 0),
     )
 
 

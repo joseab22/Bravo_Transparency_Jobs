@@ -17,6 +17,11 @@ const NAV_LINKS: NavLink[] = [
     isActive: (pathname) => pathname === "/",
   },
   {
+    href: "/insights",
+    label: "Insights",
+    isActive: (pathname) => pathname === "/insights",
+  },
+  {
     href: "/profile",
     label: "Profile",
     isActive: (pathname) => pathname === "/profile",
