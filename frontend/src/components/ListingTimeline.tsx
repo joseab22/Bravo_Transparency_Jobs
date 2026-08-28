@@ -4,7 +4,10 @@ import type { JobDetail } from "@/types/jobs";
 function relativeDate(iso: string): string {
   const parsed = new Date(iso.endsWith("Z") ? iso : `${iso}Z`);
   if (Number.isNaN(parsed.getTime())) return "";
-  return parsed.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  // timeZone pinned to UTC so this agrees between SSR (container, UTC) and
+  // hydration (the visitor's local zone) -- see postingDateLabel in
+  // jobFormatting.ts for the full explanation.
+  return parsed.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" });
 }
 
 // Merges JobEvent + RepostEvent history (both already returned by the

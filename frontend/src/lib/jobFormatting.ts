@@ -75,7 +75,12 @@ export function postingDateLabel(job: JobListItem): string | null {
   const parsed = parseApiDate(job.date_posted) ?? parseApiDate(job.date_first_seen);
   if (!parsed) return null;
 
-  return parsed.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  // timeZone must be pinned, not left to the runtime default: this renders
+  // both server-side (SSR on /jobs/[id], in the container's UTC) and
+  // client-side (hydration, in the visitor's local zone). Near a UTC day
+  // boundary those disagree on the calendar date without this, which is a
+  // hydration mismatch, not just a display quirk.
+  return parsed.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" });
 }
 
 export function confidenceLabel(value?: number | null): string {
