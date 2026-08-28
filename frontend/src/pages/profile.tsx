@@ -1,3 +1,4 @@
+import type { GetServerSideProps } from "next";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import type { ReactElement } from "react";
@@ -7,6 +8,8 @@ import { FavoritesTab } from "@/components/profile/FavoritesTab";
 import { HiddenTab } from "@/components/profile/HiddenTab";
 import { NotesTab } from "@/components/profile/NotesTab";
 import { RecentTab } from "@/components/profile/RecentTab";
+import { SITE_URL } from "@/lib/seo";
+import { PAGE_TITLE } from "@/lib/typography";
 
 const TABS = [
   { key: "saved", label: "Saved Jobs", description: "Jobs you've favorited while browsing." },
@@ -30,6 +33,18 @@ const TAB_COMPONENTS: Record<TabKey, () => ReactElement> = {
   hidden: HiddenTab,
 };
 
+// The page reads router.query.tab (a per-request value) to pick the active
+// tab, so it can't be pre-rendered once at build time -- Next's automatic
+// static optimization has no mounted router to satisfy useRouter() during
+// that prerender pass, which fails the build with "NextRouter was not
+// mounted". An empty getServerSideProps opts the page into per-request
+// rendering instead, where the router is available. No props are needed;
+// all real data (favorites, applications, etc.) is still fetched
+// client-side per device via meApi, same as before.
+export const getServerSideProps: GetServerSideProps = async () => {
+  return { props: {} };
+};
+
 export default function Profile() {
   const router = useRouter();
   const requestedTab = typeof router.query.tab === "string" ? router.query.tab : undefined;
@@ -45,11 +60,18 @@ export default function Profile() {
     <>
       <Head>
         <title>Your Profile | JobLens</title>
+        <meta
+          name="description"
+          content="Your saved jobs, applications, notes, and recently viewed listings on JobLens."
+        />
+        <link rel="canonical" href={`${SITE_URL}/profile`} />
+        {/* Per-device data with no content of public value to searchers -- keep out of the index. */}
+        <meta name="robots" content="noindex" />
       </Head>
 
       <section className="mx-auto max-w-[90rem] px-6 py-12">
         <div className="max-w-4xl">
-          <h1 className="text-3xl font-bold tracking-tight">Your profile</h1>
+          <h1 className={PAGE_TITLE}>Your profile</h1>
           <p className="mt-2 max-w-2xl text-slate-300">
             Track the jobs you care about: what you have saved, what you have applied to, and
             where you left off.

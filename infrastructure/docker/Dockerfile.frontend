@@ -19,7 +19,13 @@ CMD ["npm", "run", "dev", "--", "--hostname", "0.0.0.0"]
 
 FROM dependencies AS builder
 
-ENV NODE_ENV=production
+# NEXT_PUBLIC_* values are inlined into the client bundle at build time, not
+# read at container start -- this must be a build ARG, not a compose
+# `environment:` entry, or canonical tags/sitemap.xml/robots.txt silently
+# keep pointing at the default below in every real deployment.
+ARG NEXT_PUBLIC_SITE_URL=http://localhost:3000
+ENV NODE_ENV=production \
+    NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
 COPY . .
 RUN npm run build
 
@@ -33,6 +39,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 COPY --from=builder --chown=node:node /app/.next ./.next
 COPY --from=builder --chown=node:node /app/next.config.js ./next.config.js
+COPY --from=builder --chown=node:node /app/public ./public
 
 USER node
 EXPOSE 3000

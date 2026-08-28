@@ -6,17 +6,24 @@ import { ScoreReasoningTooltip } from "@/components/ScoreReasoningTooltip";
 import { jobsApi, meApi } from "@/lib/api";
 import { ageSummary, formatSalary, postingDateLabel, safeExternalUrl, sourceLinks } from "@/lib/jobFormatting";
 import { useJobActions } from "@/lib/useJobActions";
+import { SECTION_TITLE } from "@/lib/typography";
 import type { JobDetail, JobListItem } from "@/types/jobs";
 
 interface JobDetailPanelProps {
   jobId: number | null;
   fallback: JobListItem | null;
+  // Passed through to the detail fetch so "Found on" excludes source URLs
+  // older than the active age filter, matching the list view instead of
+  // silently ignoring it (the list and detail requests must agree, or a
+  // listing appears to have different evidence depending on which view you
+  // opened it from).
+  maxAgeDays?: number;
   onFavoriteChange?: (jobId: number, favorited: boolean) => void;
   onAppliedChange?: (jobId: number, applied: boolean) => void;
   onDismissed?: (jobId: number) => void;
 }
 
-export function JobDetailPanel({ jobId, fallback, onFavoriteChange, onAppliedChange, onDismissed }: JobDetailPanelProps) {
+export function JobDetailPanel({ jobId, fallback, maxAgeDays, onFavoriteChange, onAppliedChange, onDismissed }: JobDetailPanelProps) {
   const [detail, setDetail] = useState<JobDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +42,7 @@ export function JobDetailPanel({ jobId, fallback, onFavoriteChange, onAppliedCha
     });
 
     jobsApi
-      .get(jobId)
+      .get(jobId, maxAgeDays)
       .then((data) => {
         if (!cancelled) setDetail(data);
       })
@@ -51,11 +58,11 @@ export function JobDetailPanel({ jobId, fallback, onFavoriteChange, onAppliedCha
     return () => {
       cancelled = true;
     };
-  }, [jobId]);
+  }, [jobId, maxAgeDays]);
 
   if (jobId == null) {
     return (
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-8 text-center text-sm text-slate-400">
+      <div className="rounded-xl border border-slate-700 bg-slate-900 p-8 text-center text-sm text-slate-400 shadow-lg shadow-black/30">
         Select a listing to see its full details here.
       </div>
     );
@@ -65,7 +72,7 @@ export function JobDetailPanel({ jobId, fallback, onFavoriteChange, onAppliedCha
 
   if (!job && loading) {
     return (
-      <div className="animate-pulse rounded-xl border border-slate-800 bg-slate-900/70 p-6">
+      <div className="animate-pulse rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-lg shadow-black/30">
         <div className="h-6 w-2/3 rounded bg-slate-800" />
         <div className="mt-3 h-4 w-1/2 rounded bg-slate-800" />
         <div className="mt-6 h-24 rounded bg-slate-800" />
@@ -148,7 +155,7 @@ function JobDetailContent({ job, loadingMore, error, onFavoriteChange, onApplied
 
   if (dismissed) {
     return (
-      <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 text-sm text-slate-400">
+      <div className="rounded-xl border border-slate-700 bg-slate-900 p-4 text-sm text-slate-400 shadow-lg shadow-black/30">
         Hidden. It will not appear in search results again.
       </div>
     );
@@ -159,12 +166,12 @@ function JobDetailContent({ job, loadingMore, error, onFavoriteChange, onApplied
   const postedOn = postingDateLabel(job);
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-6">
+    <div className="rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-lg shadow-black/30">
       <div className="flex items-start gap-3">
         <CompanyLogo name={job.company.name} logoUrl={job.company.logo_url} size={48} />
 
         <div className="min-w-0 flex-1">
-          <h2 className="text-xl font-semibold">{job.title_raw}</h2>
+          <h2 className={SECTION_TITLE}>{job.title_raw}</h2>
           <p className="mt-1 text-slate-300">
             {job.company.name} · {job.location_raw || job.remote_type || "Location unavailable"}
           </p>
@@ -230,14 +237,19 @@ function JobDetailContent({ job, loadingMore, error, onFavoriteChange, onApplied
         </div>
       )}
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
-        <p className="text-sm text-slate-400">
-          {job.job_family || "Unknown role type"}
-          {job.seniority ? ` · ${job.seniority}` : ""}
-          {job.employment_type ? ` · ${job.employment_type}` : ""}
-          {job.remote_type ? ` · ${job.remote_type}` : ""}
-          {salary ? ` · ${salary}` : ""}
-        </p>
+      <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-wrap gap-2">
+          {[job.job_family || "Unknown role type", job.seniority, job.employment_type, job.remote_type, salary]
+            .filter((fact): fact is string => Boolean(fact))
+            .map((fact) => (
+              <span
+                key={fact}
+                className="rounded-full border border-slate-700 bg-slate-800/60 px-3 py-1 text-xs font-medium text-slate-300"
+              >
+                {fact}
+              </span>
+            ))}
+        </div>
 
         <ScoreReasoningTooltip job={job} />
       </div>
@@ -248,7 +260,7 @@ function JobDetailContent({ job, loadingMore, error, onFavoriteChange, onApplied
         </p>
       )}
 
-      <p className="mt-4 text-sm text-slate-400">
+      <p className="mt-4 text-xs text-slate-500">
         {job.listing_classification}
         {job.repost_count > 0 ? ` · repost #${job.repost_count}` : ""}
         {` · ${ageSummary(job)}`}

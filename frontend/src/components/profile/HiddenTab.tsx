@@ -4,6 +4,7 @@ import { CompanyLogo } from "@/components/CompanyLogo";
 import { TabEmpty, TabError, TabLoading } from "@/components/profile/TabStates";
 import { meApi } from "@/lib/api";
 import { useAsyncList } from "@/lib/useAsyncList";
+import { COMPACT_TITLE } from "@/lib/typography";
 import type { DismissalEntry } from "@/types/jobs";
 
 export function HiddenTab() {
@@ -83,7 +84,7 @@ function HiddenRow({ entry, onRestored }: { entry: DismissalEntry; onRestored: (
         <CompanyLogo name={entry.job.company.name} logoUrl={entry.job.company.logo_url} size={32} />
 
         <div className="min-w-0 flex-1">
-          <p className="truncate font-medium text-slate-100">{entry.job.title_raw}</p>
+          <h2 className={`truncate ${COMPACT_TITLE}`}>{entry.job.title_raw}</h2>
           <p className="truncate text-sm text-slate-400">{entry.job.company.name}</p>
         </div>
 

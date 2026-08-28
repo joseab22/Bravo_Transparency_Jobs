@@ -4,6 +4,7 @@ export interface Company {
   industry?: string | null;
   hiring_intensity?: number | null;
   ghost_job_rate?: number | null;
+  glassdoor_rating?: number | null;
   website?: string | null;
   logo_url?: string | null;
 }

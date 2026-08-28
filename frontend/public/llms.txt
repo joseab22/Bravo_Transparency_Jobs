@@ -1,0 +1,10 @@
+# JobLens
+
+> JobLens is a job-market transparency platform. It helps job seekers tell current, actively hiring job listings apart from stale, recycled, duplicated, or uncertain ones.
+
+JobLens collects postings from multiple providers, preserves listing history, groups related postings together, and estimates active-hiring confidence for each listing using posting age, repeated observations, parallel openings, repost history, compensation, and applicant signals. Every score comes with an explanation of the evidence behind it. A high score is not a guarantee that the employer will interview or hire.
+
+## Pages
+
+- [Job search](/): search and filter job listings with active-hiring confidence scores and source history.
+- [Profile](/profile): saved jobs, applications, notes, and recently viewed listings for the current browser.

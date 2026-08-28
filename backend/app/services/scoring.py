@@ -167,6 +167,14 @@ class ScoringService:
         days_active = int(job.days_active or 0)
         risk_percent = ghost * 100
         evidence_percent = evidence * 100
+        company_rating = getattr(getattr(job, "company", None), "glassdoor_rating", None)
+        present_evidence: list[str] = []
+        if job.salary_listed:
+            present_evidence.append("salary disclosure")
+        if job.applicant_count is not None:
+            present_evidence.append("applicant count")
+        if company_rating is not None:
+            present_evidence.append("company rating")
 
         if ghost < 0.25:
             health_interpretation = "JobLens found few warning signs associated with stale or repeatedly recycled listings."
@@ -197,9 +205,12 @@ class ScoringService:
                 "maximum": 60.0,
                 "tone": "positive" if ghost < 0.35 else "negative" if ghost >= 0.60 else "neutral",
                 "detail": (
-                    f"Estimated stale or recycled listing risk is {risk_percent:.0f}%. "
-                    f"{health_interpretation} The estimate considers posting age, repost history, "
-                    "salary disclosure, applicant count and company rating when available, and similar listings from the same employer."
+                    f"Estimated stale or recycled listing risk is {risk_percent:.0f}%. {health_interpretation} "
+                    + (
+                        f"This listing has {job.repost_count} repost{'s' if job.repost_count != 1 else ''} on record."
+                        if job.repost_count
+                        else "No repost history is recorded for this listing."
+                    )
                 ),
             },
             {
@@ -209,9 +220,9 @@ class ScoringService:
                 "maximum": 30.0,
                 "tone": "positive" if activity >= 65 else "negative" if activity < 35 else "neutral",
                 "detail": (
-                    f"Activity is {activity:.0f}/100. JobLens considers how recently the role appeared, "
-                    "whether related listings are active, and whether the posting has been observed more than once. "
-                    f"{activity_interpretation}"
+                    f"Activity is {activity:.0f}/100. {activity_interpretation} "
+                    f"First observed {days_active} day{'s' if days_active != 1 else ''} ago"
+                    + (f", found across {source_count} sources." if source_count and source_count > 1 else ".")
                 ),
             },
             {
@@ -222,8 +233,11 @@ class ScoringService:
                 "tone": "positive" if evidence >= 0.65 else "negative" if evidence < 0.35 else "neutral",
                 "detail": (
                     f"Evidence confidence is {evidence_percent:.0f}%. {evidence_interpretation} "
-                    "Evidence can include repeated observations, compensation data, applicant counts, company data, and related listings. "
-                    "This measures how well supported the score is, not whether the employer has guaranteed an interview."
+                    + (
+                        f"Supported by {join_items(present_evidence)}."
+                        if present_evidence
+                        else "No supporting data points (salary, applicant count, or company rating) are available."
+                    )
                 ),
             },
         ]
@@ -280,7 +294,6 @@ class ScoringService:
             signals.append("The employer disclosed compensation in the listing.")
         if job.applicant_count is not None:
             signals.append(f"Reported applicant count: {job.applicant_count:,}.")
-        company_rating = getattr(getattr(job, "company", None), "glassdoor_rating", None)
         if company_rating is not None:
             signals.append(f"Company rating data is available: {company_rating:.1f}/5.")
 

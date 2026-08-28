@@ -102,6 +102,8 @@ services:
       context: ./frontend
       dockerfile: ../infrastructure/docker/Dockerfile.frontend
       target: production
+      args:
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:?Set NEXT_PUBLIC_SITE_URL to the deployed origin, e.g. https://yourdomain.com}
     environment:
       BACKEND_INTERNAL_URL: http://backend:8000
       NEXT_TELEMETRY_DISABLED: "1"

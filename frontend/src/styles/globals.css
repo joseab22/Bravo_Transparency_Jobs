@@ -15,7 +15,6 @@ body {
 body {
   color: rgb(var(--foreground-rgb));
   background: rgb(var(--background-rgb));
-  font-family: Inter, system-ui, sans-serif;
 }
 
 @layer utilities {
@@ -25,7 +24,7 @@ body {
 }
 
 .confidence { font-size: 1.75rem; font-weight: 700; }
-.confidence.high { color: rgb(103 232 249); }
+.confidence.high { color: rgb(110 231 183); }
 .confidence.medium { color: rgb(253 224 71); }
 .confidence.low { color: rgb(252 165 165); }
 .confidence.unknown { color: rgb(148 163 184); }

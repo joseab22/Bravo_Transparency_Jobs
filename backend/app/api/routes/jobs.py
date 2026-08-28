@@ -351,14 +351,22 @@ async def market_stats(db: AsyncSession = Depends(get_db)):
 @router.get("/{job_id}", response_model=JobPostingDetail)
 async def get_job(
     job_id: Annotated[int, Path(ge=1)],
+    max_age_days: Annotated[int | None, Query(ge=1)] = None,
     db: AsyncSession = Depends(get_db),
+    device_id: Annotated[str | None, Depends(get_optional_device_id)] = None,
 ):
     job = (await db.execute(
         select(JobPosting).options(*DETAIL_OPTIONS).where(JobPosting.id == job_id)
     )).scalar_one_or_none()
     if not job:
         raise HTTPException(404, "Job not found")
-    return (await _serialize_jobs([job], db, JobPostingDetail))[0]
+    return (await _serialize_jobs(
+        [job],
+        db,
+        JobPostingDetail,
+        max_age_days=max_age_days,
+        device_id=device_id,
+    ))[0]
 
 
 @router.post(

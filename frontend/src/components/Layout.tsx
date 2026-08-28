@@ -65,17 +65,32 @@ export function Layout({ children }: { children: ReactNode }) {
             JobLens helps you tell current, actively hiring job listings apart from stale,
             recycled, duplicated, or uncertain ones.
           </p>
-          <p>
-            Company logos by{" "}
-            <a
-              href="https://logos.apistemic.com"
-              target="_blank"
-              rel="noopener"
-              className="font-medium text-slate-300 underline decoration-slate-600 underline-offset-2 hover:text-cyan-200"
+
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <Link
+              href="/terms"
+              className="rounded font-medium text-slate-300 underline decoration-slate-600 underline-offset-2 outline-none ring-cyan-300 hover:text-cyan-200 focus-visible:ring-2"
             >
-              apistemic logos
-            </a>
-          </p>
+              Terms of Service
+            </Link>
+            <Link
+              href="/privacy"
+              className="rounded font-medium text-slate-300 underline decoration-slate-600 underline-offset-2 outline-none ring-cyan-300 hover:text-cyan-200 focus-visible:ring-2"
+            >
+              Privacy Policy
+            </Link>
+            <p>
+              Company logos by{" "}
+              <a
+                href="https://logos.apistemic.com"
+                target="_blank"
+                rel="noopener"
+                className="font-medium text-slate-300 underline decoration-slate-600 underline-offset-2 hover:text-cyan-200"
+              >
+                apistemic logos
+              </a>
+            </p>
+          </div>
         </div>
       </footer>
     </div>

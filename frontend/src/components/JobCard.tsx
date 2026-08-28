@@ -13,6 +13,7 @@ import {
   sourceLinks,
 } from "@/lib/jobFormatting";
 import { useJobActions } from "@/lib/useJobActions";
+import { SECTION_TITLE } from "@/lib/typography";
 import type { JobListItem } from "@/types/jobs";
 
 interface JobCardProps {
@@ -94,7 +95,7 @@ export function JobCard({ job, onDismissed, onFavoriteChange, onAppliedChange }:
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="text-xl font-semibold">{job.title_raw}</h2>
+                <h2 className={SECTION_TITLE}>{job.title_raw}</h2>
                 <p className="mt-1 text-slate-300">
                   {job.company.name} ·{" "}
                   {job.location_raw || job.remote_type || "Location unavailable"}

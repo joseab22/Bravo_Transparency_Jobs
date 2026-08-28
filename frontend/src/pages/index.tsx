@@ -13,6 +13,8 @@ import { JobDetailPanel } from "@/components/JobDetailPanel";
 import { JobListRow } from "@/components/JobListRow";
 import { SavedSearchesSection } from "@/components/SavedSearchesSection";
 import { jobsApi } from "@/lib/api";
+import { SITE_URL } from "@/lib/seo";
+import { HERO_TITLE } from "@/lib/typography";
 import type { JobListItem } from "@/types/jobs";
 
 const PAGE_SIZE = 50;
@@ -206,12 +208,24 @@ export default function Home() {
           name="description"
           content="Posting history and active hiring signals for technology roles."
         />
+        <link rel="canonical" href={`${SITE_URL}/`} />
+        <script
+          type="application/ld+json"
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "WebSite",
+              name: "JobLens",
+              url: SITE_URL,
+              description: "Posting history and active hiring signals for technology roles.",
+            }),
+          }}
+        />
       </Head>
 
       <section className="mx-auto max-w-[90rem] px-6 py-12">
-        <h1 className="max-w-3xl text-4xl font-bold tracking-tight sm:text-6xl">
-          Find jobs more likely to be actively hiring.
-        </h1>
+        <h1 className={HERO_TITLE}>Find jobs more likely to be actively hiring.</h1>
 
         <p className="mt-6 max-w-3xl text-lg leading-8 text-slate-300">
           Active Hiring Confidence uses posting age, repeated observations, parallel openings,
@@ -418,6 +432,7 @@ export default function Home() {
               <JobDetailPanel
                 jobId={selectedJobId}
                 fallback={jobs.find((job) => job.id === selectedJobId) ?? null}
+                maxAgeDays={selectedDatePosted.maxAgeDays}
                 onDismissed={handleDismissed}
                 onFavoriteChange={syncFavorite}
                 onAppliedChange={syncApplied}
