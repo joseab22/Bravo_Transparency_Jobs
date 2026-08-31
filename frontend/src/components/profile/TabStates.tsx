@@ -4,7 +4,7 @@ export function TabLoading() {
       {Array.from({ length: 3 }).map((_, index) => (
         <div
           key={index}
-          className="h-24 animate-pulse rounded-xl border border-slate-800 bg-slate-900/70"
+          className="h-24 animate-pulse rounded-xl border border-line-subtle bg-surface"
         />
       ))}
     </div>
@@ -13,7 +13,7 @@ export function TabLoading() {
 
 export function TabError({ message }: { message: string }) {
   return (
-    <p role="alert" className="rounded-lg border border-red-500/40 bg-red-950/40 p-4 text-red-200">
+    <p role="alert" className="rounded-lg border border-negative/40 bg-negative/10 p-4 text-negative">
       {message}
     </p>
   );
@@ -21,7 +21,7 @@ export function TabError({ message }: { message: string }) {
 
 export function TabEmpty({ message }: { message: string }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-8 text-center text-sm text-slate-400">
+    <div className="rounded-xl border border-line-subtle bg-surface p-8 text-center text-sm text-ink-muted">
       {message}
     </div>
   );

@@ -72,7 +72,7 @@ export default function Profile() {
       <section className="mx-auto max-w-[90rem] px-6 py-12">
         <div className="max-w-4xl">
           <h1 className={PAGE_TITLE}>Your profile</h1>
-          <p className="mt-2 max-w-2xl text-slate-300">
+          <p className="mt-2 max-w-2xl text-ink-secondary">
             Track the jobs you care about: what you have saved, what you have applied to, and
             where you left off.
           </p>
@@ -80,7 +80,7 @@ export default function Profile() {
           <div
             role="tablist"
             aria-label="Profile sections"
-            className="mt-8 flex flex-wrap gap-2 border-b border-slate-800 pb-3"
+            className="mt-8 flex flex-wrap gap-2 border-b border-line-subtle pb-3"
           >
             {TABS.map((tab) => (
               <button
@@ -89,10 +89,10 @@ export default function Profile() {
                 role="tab"
                 aria-selected={tab.key === activeTab}
                 onClick={() => selectTab(tab.key)}
-                className={`rounded-lg px-4 py-2 text-sm font-semibold outline-none ring-cyan-300 transition focus-visible:ring-2 ${
+                className={`rounded-lg px-4 py-2 text-sm font-semibold outline-none ring-accent transition focus-visible:ring-2 ${
                   tab.key === activeTab
-                    ? "bg-cyan-300 text-slate-950"
-                    : "border border-slate-700 text-slate-300 hover:border-cyan-300 hover:text-cyan-200"
+                    ? "bg-accent-solid text-ink-onaccent"
+                    : "border border-line text-ink-secondary hover:border-accent hover:text-accent"
                 }`}
               >
                 {tab.label}
@@ -100,7 +100,7 @@ export default function Profile() {
             ))}
           </div>
 
-          <p className="mt-4 text-sm text-slate-400">{active.description}</p>
+          <p className="mt-4 text-sm text-ink-muted">{active.description}</p>
 
           <div role="tabpanel" className="mt-4">
             <ActiveTabContent />

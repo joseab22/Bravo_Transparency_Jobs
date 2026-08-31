@@ -91,7 +91,7 @@ export default function Home() {
   function renderToggles() {
     return (
       <>
-        <label className="flex items-center gap-2 text-sm text-slate-300">
+        <label className="flex items-center gap-2 text-sm text-ink-secondary">
           <input
             type="checkbox"
             checked={collapseCanonical}
@@ -105,7 +105,7 @@ export default function Home() {
           Collapse related listings
         </label>
 
-        <label className="flex items-center gap-2 text-sm text-slate-300">
+        <label className="flex items-center gap-2 text-sm text-ink-secondary">
           <span>Date posted</span>
           <select
             aria-label="Date posted"
@@ -115,7 +115,7 @@ export default function Home() {
               setDatePostedWithin(nextValue);
               void load(1, false, { datePostedWithin: nextValue });
             }}
-            className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-slate-100 outline-none ring-cyan-300 focus-visible:ring-2"
+            className="rounded-lg border border-line bg-page px-3 py-1.5 text-ink-primary outline-none ring-accent focus-visible:ring-2"
           >
             {DATE_POSTED_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -227,7 +227,7 @@ export default function Home() {
       <section className="mx-auto max-w-[90rem] px-6 py-12">
         <h1 className={HERO_TITLE}>Find jobs more likely to be actively hiring.</h1>
 
-        <p className="mt-6 max-w-3xl text-lg leading-8 text-slate-300">
+        <p className="mt-6 max-w-3xl text-lg leading-8 text-ink-secondary">
           Active Hiring Confidence uses posting age, repeated observations, parallel openings,
           repost history, compensation, and applicant signals. It is an estimate, not a guarantee
           of employer intent. This tool is intended as a supplement to your research and judgment,
@@ -235,12 +235,12 @@ export default function Home() {
           applying for jobs.
         </p>
 
-        <p className="mt-3 text-slate-400">
+        <p className="mt-3 text-ink-muted">
           Active Hiring Confidence (Ghost Job Filtering) · Repost tracking · Salary transparency
         </p>
 
         <form
-          className="mt-8 rounded-xl border border-slate-800 bg-slate-900/60 p-4"
+          className="mt-8 rounded-xl border border-line-subtle bg-surface p-4"
           onSubmit={(event) => {
             event.preventDefault();
             void load(1);
@@ -258,7 +258,7 @@ export default function Home() {
             <button
               type="submit"
               disabled={loading}
-              className="rounded-lg bg-cyan-300 px-5 py-3 font-semibold text-slate-950 disabled:opacity-60"
+              className="rounded-lg bg-accent-solid px-5 py-3 font-semibold text-ink-onaccent disabled:opacity-60"
             >
               {loading ? "Loading…" : "Search jobs"}
             </button>
@@ -266,7 +266,7 @@ export default function Home() {
             <button
               type="button"
               onClick={() => setFiltersPanelOpen(true)}
-              className="rounded-lg border border-slate-700 px-5 py-3 font-semibold text-slate-200 outline-none ring-cyan-300 transition hover:border-cyan-300 hover:text-cyan-200 focus-visible:ring-2"
+              className="rounded-lg border border-line px-5 py-3 font-semibold text-ink-secondary outline-none ring-accent transition hover:border-accent hover:text-accent focus-visible:ring-2"
             >
               More filters
             </button>
@@ -274,7 +274,7 @@ export default function Home() {
             <button
               type="button"
               onClick={clearFilters}
-              className="rounded-lg px-5 py-3 font-semibold text-slate-400 outline-none ring-cyan-300 transition hover:text-slate-200 focus-visible:ring-2"
+              className="rounded-lg px-5 py-3 font-semibold text-ink-muted outline-none ring-accent transition hover:text-ink-secondary focus-visible:ring-2"
             >
               Clear filters
             </button>
@@ -283,25 +283,25 @@ export default function Home() {
 
         <FilterPanel open={filtersPanelOpen} onClose={() => setFiltersPanelOpen(false)}>
           <PrimaryFilterFields values={filters} onChange={updateFilter} />
-          <div className="border-t border-slate-800 pt-4">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <div className="border-t border-line-subtle pt-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-faint">
               More filters
             </p>
             <div className="flex flex-col gap-4">
               <AdvancedFilterFields values={filters} onChange={updateFilter} />
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-slate-800 pt-4">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-line-subtle pt-4">
             {renderToggles()}
           </div>
-          <div className="mt-2 flex flex-wrap gap-3 border-t border-slate-800 pt-4">
+          <div className="mt-2 flex flex-wrap gap-3 border-t border-line-subtle pt-4">
             <button
               type="button"
               onClick={() => {
                 setFiltersPanelOpen(false);
                 void load(1);
               }}
-              className="rounded-lg bg-cyan-300 px-5 py-3 font-semibold text-slate-950"
+              className="rounded-lg bg-accent-solid px-5 py-3 font-semibold text-ink-onaccent"
             >
               Apply filters
             </button>
@@ -309,7 +309,7 @@ export default function Home() {
             <button
               type="button"
               onClick={clearFilters}
-              className="rounded-lg px-5 py-3 font-semibold text-slate-400 outline-none ring-cyan-300 transition hover:text-slate-200 focus-visible:ring-2"
+              className="rounded-lg px-5 py-3 font-semibold text-ink-muted outline-none ring-accent transition hover:text-ink-secondary focus-visible:ring-2"
             >
               Clear filters
             </button>
@@ -335,14 +335,14 @@ export default function Home() {
         </FilterPanel>
 
         {error && (
-          <p className="mt-4 rounded-lg border border-red-500/40 bg-red-950/40 p-4 text-red-200">
+          <p className="mt-4 rounded-lg border border-negative/40 bg-negative/10 p-4 text-negative">
             {error}
           </p>
         )}
 
         {!loading && !error && totalResults !== null && (
           <div
-            className="mt-8 rounded-lg border border-slate-800 bg-slate-900/70 p-4 text-sm text-slate-300"
+            className="mt-8 rounded-lg border border-line-subtle bg-surface p-4 text-sm text-ink-secondary"
             role="status"
             aria-live="polite"
           >
@@ -369,18 +369,18 @@ export default function Home() {
         {!loading && !error && totalResults !== null && totalResults > 0 && totalPages > 1 && (
           <nav
             aria-label="Top job results pagination"
-            className="mt-4 flex items-center justify-between gap-4 rounded-lg border border-slate-800 bg-slate-900/50 p-3"
+            className="mt-4 flex items-center justify-between gap-4 rounded-lg border border-line-subtle bg-surface p-3"
           >
             <button
               type="button"
               onClick={() => load(page - 1, true)}
               disabled={page <= 1 || loading}
-              className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-300 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-lg border border-line bg-surface px-4 py-2 text-sm font-semibold text-ink-secondary transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
               Previous
             </button>
 
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-ink-muted">
               Page {page} of {totalPages}
             </p>
 
@@ -388,7 +388,7 @@ export default function Home() {
               type="button"
               onClick={() => load(page + 1, true)}
               disabled={page >= totalPages || loading}
-              className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-300 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-lg border border-line bg-surface px-4 py-2 text-sm font-semibold text-ink-secondary transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next
             </button>
@@ -400,14 +400,14 @@ export default function Home() {
             {Array.from({ length: 5 }).map((_, index) => (
               <div
                 key={index}
-                className="h-36 animate-pulse rounded-xl border border-slate-800 bg-slate-900/70"
+                className="h-36 animate-pulse rounded-xl border border-line-subtle bg-surface"
               />
             ))}
           </div>
         )}
 
         {!loading && !error && totalResults === 0 && (
-          <div className="mt-10 rounded-xl border border-slate-800 bg-slate-900/70 p-6 text-center text-slate-300">
+          <div className="mt-10 rounded-xl border border-line-subtle bg-surface p-6 text-center text-ink-secondary">
             No jobs match these filters. Try a broader search or clear one or more filters.
           </div>
         )}
@@ -450,12 +450,12 @@ export default function Home() {
               type="button"
               onClick={() => load(page - 1, true)}
               disabled={page <= 1 || loading}
-              className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-300 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-lg border border-line bg-surface px-4 py-2 text-sm font-semibold text-ink-secondary transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
               Previous
             </button>
 
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-ink-muted">
               Page {page} of {totalPages}
             </p>
 
@@ -463,7 +463,7 @@ export default function Home() {
               type="button"
               onClick={() => load(page + 1, true)}
               disabled={page >= totalPages || loading}
-              className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-300 hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-lg border border-line bg-surface px-4 py-2 text-sm font-semibold text-ink-secondary transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next
             </button>

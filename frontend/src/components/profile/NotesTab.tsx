@@ -103,13 +103,13 @@ function NoteRow({
   }
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5">
+    <div className="rounded-xl border border-line-subtle bg-surface p-5">
       <div className="flex items-start gap-3">
         <CompanyLogo name={entry.job.company.name} logoUrl={entry.job.company.logo_url} />
 
         <div className="min-w-0 flex-1">
           <h2 className={COMPACT_TITLE}>{entry.job.title_raw}</h2>
-          <p className="mt-1 text-sm text-slate-300">{entry.job.company.name}</p>
+          <p className="mt-1 text-sm text-ink-secondary">{entry.job.company.name}</p>
         </div>
 
         {hasStandaloneNote && (
@@ -117,21 +117,21 @@ function NoteRow({
             type="button"
             onClick={remove}
             disabled={removing}
-            className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 outline-none ring-cyan-300 transition hover:border-rose-400 hover:text-rose-300 focus-visible:ring-2 disabled:opacity-50"
+            className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink-secondary outline-none ring-accent transition hover:border-negative hover:text-negative focus-visible:ring-2 disabled:opacity-50"
           >
             {removing ? "Removing…" : "Delete"}
           </button>
         )}
       </div>
 
-      <label className="mt-3 block text-sm text-slate-300">
+      <label className="mt-3 block text-sm text-ink-secondary">
         Note
         <textarea
           value={note}
           onChange={(event) => setNote(event.target.value)}
           rows={3}
           placeholder="Add a personal note about this listing..."
-          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500"
+          className="mt-1 w-full rounded-lg border border-line bg-page px-3 py-2 text-ink-primary placeholder:text-ink-faint"
         />
       </label>
 
@@ -140,25 +140,25 @@ function NoteRow({
           type="button"
           onClick={save}
           disabled={!dirty || saving}
-          className="rounded-lg bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50"
+          className="rounded-lg bg-accent-solid px-4 py-2 text-sm font-semibold text-ink-onaccent disabled:opacity-50"
         >
           {saving ? "Saving…" : "Save note"}
         </button>
-        {feedback && <span className="text-sm text-emerald-300">{feedback}</span>}
+        {feedback && <span className="text-sm text-positive">{feedback}</span>}
         {errorMessage && (
-          <span role="alert" className="text-sm text-rose-300">
+          <span role="alert" className="text-sm text-negative">
             {errorMessage}
           </span>
         )}
       </div>
 
       {entry.application_note && (
-        <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/40 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <div className="mt-3 rounded-lg border border-line-subtle bg-inset p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
             Application note
           </p>
-          <p className="mt-1 whitespace-pre-line text-sm text-slate-300">{entry.application_note}</p>
-          <p className="mt-1.5 text-xs text-slate-500">Edit this from the Applications tab.</p>
+          <p className="mt-1 whitespace-pre-line text-sm text-ink-secondary">{entry.application_note}</p>
+          <p className="mt-1.5 text-xs text-ink-faint">Edit this from the Applications tab.</p>
         </div>
       )}
     </div>

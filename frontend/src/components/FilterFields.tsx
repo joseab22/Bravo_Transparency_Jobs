@@ -42,7 +42,7 @@ interface FieldsProps {
 }
 
 const inputClass =
-  "w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500";
+  "w-full rounded-lg border border-line bg-page px-3 py-2 text-ink-primary placeholder:text-ink-faint";
 
 export function PrimaryFilterFields({ values, onChange }: FieldsProps) {
   return (
@@ -203,7 +203,7 @@ export function AdvancedFilterFields({ values, onChange }: FieldsProps) {
           className={inputClass}
         />
         {values.applicantMax && (
-          <p role="note" className="mt-1.5 text-xs leading-5 text-amber-400">
+          <p role="note" className="mt-1.5 text-xs leading-5 text-warning">
             Jobs with unavailable applicant count data are included in these results.
           </p>
         )}
@@ -241,7 +241,7 @@ export function AdvancedFilterFields({ values, onChange }: FieldsProps) {
           max="100"
           className={inputClass}
         />
-        <p className="mt-1.5 text-xs leading-5 text-slate-500">
+        <p className="mt-1.5 text-xs leading-5 text-ink-faint">
           Hides jobs that have not been scored yet.
         </p>
       </div>

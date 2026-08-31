@@ -33,7 +33,7 @@ export function Tooltip({ label, children }: TooltipProps) {
         // upward (like a typical tooltip) clips against the card's own top
         // edge or the card above it in the list. Opens downward instead,
         // matching ScoreReasoningTooltip in the same position.
-        className={`pointer-events-none absolute left-1/2 top-full z-50 mt-2 -translate-x-1/2 whitespace-nowrap rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs font-medium text-slate-100 shadow-xl transition ${
+        className={`pointer-events-none absolute left-1/2 top-full z-50 mt-2 -translate-x-1/2 whitespace-nowrap rounded-lg border border-line bg-page px-2.5 py-1.5 text-xs font-medium text-ink-primary shadow-xl transition ${
           open ? "opacity-100" : "invisible opacity-0"
         }`}
       >

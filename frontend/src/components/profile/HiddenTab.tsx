@@ -79,17 +79,17 @@ function HiddenRow({ entry, onRestored }: { entry: DismissalEntry; onRestored: (
   }
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+    <div className="rounded-xl border border-line-subtle bg-surface p-4">
       <div className="flex items-center gap-3">
         <CompanyLogo name={entry.job.company.name} logoUrl={entry.job.company.logo_url} size={32} />
 
         <div className="min-w-0 flex-1">
           <h2 className={`truncate ${COMPACT_TITLE}`}>{entry.job.title_raw}</h2>
-          <p className="truncate text-sm text-slate-400">{entry.job.company.name}</p>
+          <p className="truncate text-sm text-ink-muted">{entry.job.company.name}</p>
         </div>
 
         {errorMessage && (
-          <span role="alert" className="text-xs text-rose-300">
+          <span role="alert" className="text-xs text-negative">
             {errorMessage}
           </span>
         )}
@@ -97,7 +97,7 @@ function HiddenRow({ entry, onRestored }: { entry: DismissalEntry; onRestored: (
         <button
           type="button"
           onClick={() => setNoteOpen((open) => !open)}
-          className="shrink-0 rounded-lg border border-slate-700 px-3 py-1.5 text-sm font-semibold text-slate-300 outline-none ring-cyan-300 transition hover:border-cyan-300 hover:text-cyan-200 focus-visible:ring-2"
+          className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-sm font-semibold text-ink-secondary outline-none ring-accent transition hover:border-accent hover:text-accent focus-visible:ring-2"
         >
           {savedNote ? "Edit note" : "Add note"}
         </button>
@@ -106,22 +106,22 @@ function HiddenRow({ entry, onRestored }: { entry: DismissalEntry; onRestored: (
           type="button"
           onClick={restore}
           disabled={restoring}
-          className="shrink-0 rounded-lg border border-slate-700 px-3 py-1.5 text-sm font-semibold text-slate-300 outline-none ring-cyan-300 transition hover:border-cyan-300 hover:text-cyan-200 focus-visible:ring-2 disabled:opacity-50"
+          className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-sm font-semibold text-ink-secondary outline-none ring-accent transition hover:border-accent hover:text-accent focus-visible:ring-2 disabled:opacity-50"
         >
           Unhide
         </button>
       </div>
 
       {noteOpen && (
-        <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/40 p-3">
-          <label className="block text-sm text-slate-300">
+        <div className="mt-3 rounded-lg border border-line-subtle bg-inset p-3">
+          <label className="block text-sm text-ink-secondary">
             Note
             <textarea
               value={noteText}
               onChange={(event) => setNoteText(event.target.value)}
               rows={3}
               placeholder="Add a personal note about this listing..."
-              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500"
+              className="mt-1 w-full rounded-lg border border-line bg-page px-3 py-2 text-ink-primary placeholder:text-ink-faint"
             />
           </label>
           <div className="mt-2 flex items-center gap-3">
@@ -129,13 +129,13 @@ function HiddenRow({ entry, onRestored }: { entry: DismissalEntry; onRestored: (
               type="button"
               onClick={saveNote}
               disabled={!noteDirty || noteSaving}
-              className="rounded-lg bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50"
+              className="rounded-lg bg-accent-solid px-4 py-2 text-sm font-semibold text-ink-onaccent disabled:opacity-50"
             >
               {noteSaving ? "Saving…" : "Save note"}
             </button>
-            {noteFeedback && <span className="text-sm text-emerald-300">{noteFeedback}</span>}
+            {noteFeedback && <span className="text-sm text-positive">{noteFeedback}</span>}
             {noteError && (
-              <span role="alert" className="text-sm text-rose-300">
+              <span role="alert" className="text-sm text-negative">
                 {noteError}
               </span>
             )}
