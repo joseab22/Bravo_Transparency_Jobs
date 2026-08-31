@@ -42,7 +42,7 @@ export function FilterPanel({ open, onClose, children }: FilterPanelProps) {
   return createPortal(
     <div className="fixed inset-0 z-40">
       <div
-        className="absolute inset-0 bg-slate-950/70"
+        className="absolute inset-0 bg-black/60"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -53,15 +53,15 @@ export function FilterPanel({ open, onClose, children }: FilterPanelProps) {
         aria-modal="true"
         aria-label="All filters"
         tabIndex={-1}
-        className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-slate-800 bg-slate-950 p-6 shadow-2xl outline-none sm:w-[26rem]"
+        className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-line-subtle bg-page p-6 shadow-2xl outline-none sm:w-[26rem]"
       >
         <div className="flex items-center justify-between gap-4">
-          <h2 className="text-lg font-semibold text-slate-100">All filters</h2>
+          <h2 className="text-lg font-semibold text-ink-primary">All filters</h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close filters panel"
-            className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 outline-none ring-cyan-300 transition hover:border-cyan-300 hover:text-cyan-200 focus-visible:ring-2"
+            className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink-secondary outline-none ring-accent transition hover:border-accent hover:text-accent focus-visible:ring-2"
           >
             Close
           </button>

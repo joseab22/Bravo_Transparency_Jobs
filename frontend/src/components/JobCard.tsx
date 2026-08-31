@@ -82,7 +82,7 @@ export function JobCard({ job, onDismissed, onFavoriteChange, onAppliedChange }:
 
   if (dismissed) {
     return (
-      <div className={`${CARD} p-4 text-sm text-slate-400`}>
+      <div className={`${CARD} p-4 text-sm text-ink-muted`}>
         Hidden. It will not appear in search results again.
       </div>
     );
@@ -98,7 +98,7 @@ export function JobCard({ job, onDismissed, onFavoriteChange, onAppliedChange }:
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className={SECTION_TITLE}>{job.title_raw}</h2>
-                <p className="mt-1 text-slate-300">
+                <p className="mt-1 text-ink-secondary">
                   {job.company.name} ·{" "}
                   {job.location_raw || job.remote_type || "Location unavailable"}
                 </p>
@@ -140,15 +140,15 @@ export function JobCard({ job, onDismissed, onFavoriteChange, onAppliedChange }:
             </div>
 
             {noteOpen && (
-              <div className="mt-2 rounded-lg border border-slate-800 bg-slate-950/40 p-3">
-                <label className="block text-sm text-slate-300">
+              <div className="mt-2 rounded-lg border border-line-subtle bg-inset p-3">
+                <label className="block text-sm text-ink-secondary">
                   Note
                   <textarea
                     value={noteText}
                     onChange={(event) => setNoteText(event.target.value)}
                     rows={3}
                     placeholder="Add a personal note about this listing..."
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-500"
+                    className="mt-1 w-full rounded-lg border border-line bg-page px-3 py-2 text-ink-primary placeholder:text-ink-faint"
                   />
                 </label>
                 <div className="mt-2 flex items-center gap-3">
@@ -156,13 +156,13 @@ export function JobCard({ job, onDismissed, onFavoriteChange, onAppliedChange }:
                     type="button"
                     onClick={saveNote}
                     disabled={!noteDirty || noteSaving}
-                    className="rounded-lg bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50"
+                    className="rounded-lg bg-accent-solid px-4 py-2 text-sm font-semibold text-ink-onaccent disabled:opacity-50"
                   >
                     {noteSaving ? "Saving…" : "Save note"}
                   </button>
-                  {noteFeedback && <span className="text-sm text-emerald-300">{noteFeedback}</span>}
+                  {noteFeedback && <span className="text-sm text-positive">{noteFeedback}</span>}
                   {noteError && (
-                    <span role="alert" className="text-sm text-rose-300">
+                    <span role="alert" className="text-sm text-negative">
                       {noteError}
                     </span>
                   )}
@@ -170,7 +170,7 @@ export function JobCard({ job, onDismissed, onFavoriteChange, onAppliedChange }:
               </div>
             )}
 
-            <p className="mt-2 text-sm text-slate-400">
+            <p className="mt-2 text-sm text-ink-muted">
               {job.job_family || "Unknown role type"}
               {job.seniority ? ` · ${job.seniority}` : ""}
               {job.employment_type ? ` · ${job.employment_type}` : ""}
@@ -179,19 +179,19 @@ export function JobCard({ job, onDismissed, onFavoriteChange, onAppliedChange }:
             </p>
 
             {boardCount > 1 && (
-              <p className="mt-1 text-sm font-medium text-cyan-200">
+              <p className="mt-1 text-sm font-medium text-accent">
                 Found on {boardCount} job boards
               </p>
             )}
 
             {actionFeedback && (
-              <p role="status" aria-live="polite" className="mt-1 text-xs text-emerald-300">
+              <p role="status" aria-live="polite" className="mt-1 text-xs text-positive">
                 {actionFeedback}
               </p>
             )}
 
             {actionError && (
-              <p role="alert" className="mt-1 text-xs text-rose-300">
+              <p role="alert" className="mt-1 text-xs text-negative">
                 {actionError}
               </p>
             )}
@@ -206,14 +206,14 @@ export function JobCard({ job, onDismissed, onFavoriteChange, onAppliedChange }:
                 });
               }}
               aria-expanded={expanded}
-              className="mt-3 rounded text-sm font-medium text-cyan-300 outline-none ring-cyan-300 transition hover:text-cyan-200 focus-visible:ring-2"
+              className="mt-3 rounded text-sm font-medium text-accent outline-none ring-accent transition hover:text-accent focus-visible:ring-2"
             >
               {expanded ? "Show less" : "Show more"}
             </button>
 
             {expanded && (
               <div className="mt-3">
-                <p className="text-sm text-slate-400">
+                <p className="text-sm text-ink-muted">
                   {job.listing_classification}
                   {job.repost_count > 0 ? ` · repost #${job.repost_count}` : ""}
                   {` · ${ageSummary(job)}`}
@@ -224,7 +224,7 @@ export function JobCard({ job, onDismissed, onFavoriteChange, onAppliedChange }:
                 </p>
 
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-                  <span className="text-slate-400">Found on</span>
+                  <span className="text-ink-muted">Found on</span>
 
                   {sourceLinks(job).map(({ source, label }) => {
                     const safeUrl = safeExternalUrl(source.source_url);
@@ -236,7 +236,7 @@ export function JobCard({ job, onDismissed, onFavoriteChange, onAppliedChange }:
                         target="_blank"
                         rel="noopener noreferrer"
                         title={`Open this listing on ${source.publisher_name}`}
-                        className="rounded-full border border-cyan-500/40 bg-cyan-950/30 px-3 py-1 text-cyan-200 hover:border-cyan-300"
+                        className="rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-accent hover:border-accent"
                       >
                         {label}
                         {source.is_direct ? " · Direct" : ""}
@@ -245,7 +245,7 @@ export function JobCard({ job, onDismissed, onFavoriteChange, onAppliedChange }:
                       <span
                         key={source.sighting_key}
                         title="The source URL was unavailable or invalid"
-                        className="rounded-full border border-slate-700 px-3 py-1 text-slate-300"
+                        className="rounded-full border border-line px-3 py-1 text-ink-secondary"
                       >
                         {label}
                         {source.is_direct ? " · Direct" : ""}

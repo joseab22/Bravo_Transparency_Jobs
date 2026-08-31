@@ -13,7 +13,7 @@ export function ScoreReasoningTooltip({ job }: { job: JobListItem }) {
     return (
       <div className="flex shrink-0 items-center gap-2 text-left">
         <ConfidenceGauge confidence={null} size={44} />
-        <p className="text-sm text-slate-400">Not scored</p>
+        <p className="text-sm text-ink-muted">Not scored</p>
       </div>
     );
   }
@@ -37,32 +37,32 @@ export function ScoreReasoningTooltip({ job }: { job: JobListItem }) {
         aria-describedby={`score-reasoning-${job.id}`}
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className="flex items-center gap-2 rounded-lg px-2 py-1 text-left outline-none ring-cyan-300 transition hover:bg-slate-800 focus-visible:ring-2"
+        className="flex items-center gap-2 rounded-lg px-2 py-1 text-left outline-none ring-accent transition hover:bg-surface-2 focus-visible:ring-2"
       >
         <ConfidenceGauge confidence={confidence} size={44} />
-        <span className="text-sm text-slate-400">
+        <span className="text-sm text-ink-muted">
           {confidenceLabel(confidence)}
-          <span className="block font-medium text-cyan-300">Why? →</span>
+          <span className="block font-medium text-accent">Why? →</span>
         </span>
       </button>
 
       <div
         id={`score-reasoning-${job.id}`}
         role="tooltip"
-        className={`absolute right-0 top-full z-50 mt-2 max-h-[70vh] w-[min(26rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-slate-700 bg-slate-950 p-4 text-left shadow-2xl transition ${visibilityClasses}`}
+        className={`absolute right-0 top-full z-50 mt-2 max-h-[70vh] w-[min(26rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-line bg-page p-4 text-left shadow-2xl transition ${visibilityClasses}`}
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold text-cyan-200">Why this score</p>
-            <p className="mt-1 text-sm leading-5 text-slate-300">{reasoning.summary}</p>
+            <p className="text-sm font-semibold text-accent">Why this score</p>
+            <p className="mt-1 text-sm leading-5 text-ink-secondary">{reasoning.summary}</p>
           </div>
-          <span className="rounded-full border border-slate-700 px-2 py-1 text-xs font-semibold text-slate-200">
+          <span className="rounded-full border border-line px-2 py-1 text-xs font-semibold text-ink-secondary">
             {reasoning.score.toFixed(1)}/100
           </span>
         </div>
 
-        <p className="mt-3 rounded-lg bg-slate-900 px-3 py-2 text-xs leading-5 text-slate-400">
-          <span className="font-semibold text-slate-300">How the score is calculated: </span>
+        <p className="mt-3 rounded-lg bg-surface px-3 py-2 text-xs leading-5 text-ink-muted">
+          <span className="font-semibold text-ink-secondary">How the score is calculated: </span>
           {reasoning.formula}
         </p>
 
@@ -70,31 +70,31 @@ export function ScoreReasoningTooltip({ job }: { job: JobListItem }) {
           {reasoning.components.map((component) => (
             <div key={component.key}>
               <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="font-medium text-slate-200">{component.label}</span>
+                <span className="font-medium text-ink-secondary">{component.label}</span>
                 <span
                   className={
                     component.tone === "positive"
-                      ? "font-semibold text-emerald-300"
+                      ? "font-semibold text-positive"
                       : component.tone === "negative"
-                        ? "font-semibold text-rose-300"
-                        : "font-semibold text-amber-200"
+                        ? "font-semibold text-negative"
+                        : "font-semibold text-warning"
                   }
                 >
                   {signedPoints(component.points)}
                   {component.maximum != null ? ` / ${component.maximum.toFixed(0)}` : ""}
                 </span>
               </div>
-              <p className="mt-1 text-xs leading-5 text-slate-400">{component.detail}</p>
+              <p className="mt-1 text-xs leading-5 text-ink-muted">{component.detail}</p>
             </div>
           ))}
         </div>
 
         {reasoning.signals.length > 0 && (
-          <div className="mt-4 border-t border-slate-800 pt-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          <div className="mt-4 border-t border-line-subtle pt-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
               What JobLens observed
             </p>
-            <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-300">
+            <ul className="mt-2 space-y-1 text-xs leading-5 text-ink-secondary">
               {reasoning.signals.slice(0, 6).map((signal) => (
                 <li key={signal}>• {signal}</li>
               ))}
@@ -103,11 +103,11 @@ export function ScoreReasoningTooltip({ job }: { job: JobListItem }) {
         )}
 
         {reasoning.limitations.length > 0 && (
-          <div className="mt-4 border-t border-slate-800 pt-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <div className="mt-4 border-t border-line-subtle pt-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
               What JobLens could not verify
             </p>
-            <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-500">
+            <ul className="mt-2 space-y-1 text-xs leading-5 text-ink-faint">
               {reasoning.limitations.map((limitation) => (
                 <li key={limitation}>• {limitation}</li>
               ))}

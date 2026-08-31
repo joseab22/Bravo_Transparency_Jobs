@@ -15,7 +15,7 @@ export function CompanyLogo({ name, logoUrl, size = 40 }: CompanyLogoProps) {
       <div
         aria-hidden="true"
         style={{ width: size, height: size }}
-        className="flex shrink-0 items-center justify-center rounded-lg border border-slate-700 bg-slate-800 text-sm font-semibold text-slate-300"
+        className="flex shrink-0 items-center justify-center rounded-lg border border-line bg-surface-2 text-sm font-semibold text-ink-secondary"
       >
         {initial}
       </div>
@@ -33,7 +33,7 @@ export function CompanyLogo({ name, logoUrl, size = 40 }: CompanyLogoProps) {
       loading="lazy"
       onError={() => setFailed(true)}
       style={{ width: size, height: size }}
-      className="shrink-0 rounded-lg border border-slate-800 bg-white object-contain p-1"
+      className="shrink-0 rounded-lg border border-line-subtle bg-white object-contain p-1"
     />
   );
 }

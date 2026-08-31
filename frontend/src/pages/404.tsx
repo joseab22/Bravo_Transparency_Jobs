@@ -17,14 +17,14 @@ export default function NotFoundPage() {
 
         <h1 className={`mt-8 ${PAGE_TITLE}`}>Sorry, no jobs here.</h1>
 
-        <p className="mt-4 text-slate-300">
+        <p className="mt-4 text-ink-secondary">
           The page you followed does not exist, or the link is out of date. It is not a listing
           JobLens has tracked, and it does not mean any positions you are watching have closed.
         </p>
 
         <Link
           href="/"
-          className="mt-8 rounded-lg bg-cyan-600 px-5 py-2.5 font-medium text-slate-950 outline-none ring-cyan-300 transition hover:bg-cyan-500 focus-visible:ring-2"
+          className="mt-8 rounded-lg bg-accent-solid px-5 py-2.5 font-medium text-ink-onaccent outline-none ring-accent transition hover:bg-accent-solid-hover focus-visible:ring-2"
         >
           Back to job search
         </Link>

@@ -17,9 +17,9 @@ const CLASSIFICATION_LABEL: Record<string, string> = {
 function StatTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className={`${CARD} p-5`}>
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-2 text-4xl font-bold tracking-tight text-slate-100">{value}</p>
-      {hint && <p className="mt-1 text-sm text-slate-400">{hint}</p>}
+      <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">{label}</p>
+      <p className="mt-2 text-4xl font-bold tracking-tight text-ink-primary">{value}</p>
+      {hint && <p className="mt-1 text-sm text-ink-muted">{hint}</p>}
     </div>
   );
 }
@@ -67,7 +67,7 @@ export default function Insights() {
       <section className="mx-auto max-w-[90rem] px-6 py-12">
         <div className="max-w-3xl">
           <h1 className={PAGE_TITLE}>Market insights</h1>
-          <p className="mt-2 text-slate-300">
+          <p className="mt-2 text-ink-secondary">
             Aggregate signals across every currently active listing JobLens tracks. These are
             market-wide averages, not a prediction for any single job.
           </p>
@@ -82,7 +82,7 @@ export default function Insights() {
         )}
 
         {!loading && error && (
-          <p role="alert" className="mt-8 rounded-lg border border-red-500/40 bg-red-950/40 p-4 text-sm text-red-200">
+          <p role="alert" className="mt-8 rounded-lg border border-negative/40 bg-negative/10 p-4 text-sm text-negative">
             {error}
           </p>
         )}

@@ -77,12 +77,12 @@ export default function JobPage({ job: initialJob }: JobPageProps) {
       <section className="mx-auto flex max-w-xl flex-col items-center px-6 py-24 text-center">
         <Logo className="text-2xl" />
         <h1 className="mt-8 text-3xl font-bold tracking-tight">Listing not found</h1>
-        <p className="mt-4 text-slate-300">
+        <p className="mt-4 text-ink-secondary">
           This job may have been removed, or the link may be incorrect.
         </p>
         <Link
           href="/"
-          className="mt-8 rounded-lg bg-cyan-600 px-5 py-2.5 font-medium text-slate-950 outline-none ring-cyan-300 transition hover:bg-cyan-500 focus-visible:ring-2"
+          className="mt-8 rounded-lg bg-accent-solid px-5 py-2.5 font-medium text-ink-onaccent outline-none ring-accent transition hover:bg-accent-solid-hover focus-visible:ring-2"
         >
           Back to job search
         </Link>

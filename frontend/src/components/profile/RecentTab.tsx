@@ -36,18 +36,18 @@ export function RecentTab() {
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center justify-end gap-3">
         {clearError && (
-          <span role="alert" className="text-sm text-rose-300">
+          <span role="alert" className="text-sm text-negative">
             {clearError}
           </span>
         )}
         {confirming ? (
           <>
-            <span className="text-sm text-slate-400">Clear all {items.length} entries?</span>
+            <span className="text-sm text-ink-muted">Clear all {items.length} entries?</span>
             <button
               type="button"
               onClick={clearAll}
               disabled={clearing}
-              className="rounded-lg border border-rose-500/50 px-3 py-1.5 text-sm font-semibold text-rose-300 outline-none ring-cyan-300 transition hover:bg-rose-950/30 focus-visible:ring-2 disabled:opacity-50"
+              className="rounded-lg border border-negative/50 px-3 py-1.5 text-sm font-semibold text-negative outline-none ring-accent transition hover:bg-negative/10 focus-visible:ring-2 disabled:opacity-50"
             >
               {clearing ? "Clearing…" : "Confirm clear"}
             </button>
@@ -55,7 +55,7 @@ export function RecentTab() {
               type="button"
               onClick={() => setConfirming(false)}
               disabled={clearing}
-              className="rounded-lg px-3 py-1.5 text-sm font-semibold text-slate-400 outline-none ring-cyan-300 transition hover:text-slate-200 focus-visible:ring-2 disabled:opacity-50"
+              className="rounded-lg px-3 py-1.5 text-sm font-semibold text-ink-muted outline-none ring-accent transition hover:text-ink-secondary focus-visible:ring-2 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -64,7 +64,7 @@ export function RecentTab() {
           <button
             type="button"
             onClick={() => setConfirming(true)}
-            className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm font-semibold text-slate-300 outline-none ring-cyan-300 transition hover:border-rose-400 hover:text-rose-300 focus-visible:ring-2"
+            className="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold text-ink-secondary outline-none ring-accent transition hover:border-negative hover:text-negative focus-visible:ring-2"
           >
             Clear all
           </button>

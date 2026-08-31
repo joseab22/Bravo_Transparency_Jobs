@@ -58,19 +58,19 @@ export function SavedSearchesSection({
   }
 
   return (
-    <div className="border-t border-slate-800 pt-4">
-      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+    <div className="border-t border-line-subtle pt-4">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-faint">
         Saved searches
       </p>
 
-      {loading && <p className="text-sm text-slate-500">Loading saved searches…</p>}
+      {loading && <p className="text-sm text-ink-faint">Loading saved searches…</p>}
       {error && (
-        <p role="alert" className="text-sm text-rose-300">
+        <p role="alert" className="text-sm text-negative">
           {error}
         </p>
       )}
       {!loading && !error && items.length === 0 && (
-        <p className="text-sm text-slate-500">No saved searches yet.</p>
+        <p className="text-sm text-ink-faint">No saved searches yet.</p>
       )}
 
       {!loading && !error && items.length > 0 && (
@@ -78,12 +78,12 @@ export function SavedSearchesSection({
           {items.map((entry) => (
             <li
               key={entry.id}
-              className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 px-3 py-2"
+              className="flex items-center justify-between gap-2 rounded-lg border border-line-subtle px-3 py-2"
             >
               <button
                 type="button"
                 onClick={() => onApply(entry.filters as unknown as SavedSearchPayload)}
-                className="min-w-0 flex-1 truncate rounded text-left text-sm font-medium text-slate-200 outline-none ring-cyan-300 hover:text-cyan-200 focus-visible:ring-2"
+                className="min-w-0 flex-1 truncate rounded text-left text-sm font-medium text-ink-secondary outline-none ring-accent hover:text-accent focus-visible:ring-2"
               >
                 {entry.name}
               </button>
@@ -91,7 +91,7 @@ export function SavedSearchesSection({
                 type="button"
                 onClick={() => remove(entry.id)}
                 aria-label={`Delete saved search ${entry.name}`}
-                className="shrink-0 rounded text-xs text-slate-500 outline-none ring-cyan-300 hover:text-rose-300 focus-visible:ring-2"
+                className="shrink-0 rounded text-xs text-ink-faint outline-none ring-accent hover:text-negative focus-visible:ring-2"
               >
                 Delete
               </button>
@@ -106,20 +106,20 @@ export function SavedSearchesSection({
           value={name}
           onChange={(event) => setName(event.target.value)}
           placeholder="Name this search"
-          className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500"
+          className="min-w-0 flex-1 rounded-lg border border-line bg-page px-3 py-2 text-sm text-ink-primary placeholder:text-ink-faint"
         />
         <button
           type="button"
           onClick={save}
           disabled={saving || !name.trim()}
-          className="shrink-0 rounded-lg border border-slate-700 px-3 py-2 text-sm font-semibold text-slate-200 outline-none ring-cyan-300 transition hover:border-cyan-300 hover:text-cyan-200 focus-visible:ring-2 disabled:opacity-50"
+          className="shrink-0 rounded-lg border border-line px-3 py-2 text-sm font-semibold text-ink-secondary outline-none ring-accent transition hover:border-accent hover:text-accent focus-visible:ring-2 disabled:opacity-50"
         >
           Save current
         </button>
       </div>
 
       {actionError && (
-        <p role="alert" className="mt-2 text-sm text-rose-300">
+        <p role="alert" className="mt-2 text-sm text-negative">
           {actionError}
         </p>
       )}

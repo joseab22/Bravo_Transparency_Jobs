@@ -29,10 +29,10 @@ export function IconToggleButton({
         aria-label={label}
         disabled={pending}
         onClick={onClick}
-        className={`rounded-lg p-2 outline-none ring-cyan-300 transition focus-visible:ring-2 disabled:opacity-50 ${
+        className={`rounded-lg p-2 outline-none ring-accent transition focus-visible:ring-2 disabled:opacity-50 ${
           pressed
-            ? "bg-cyan-950/40 text-cyan-300"
-            : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+            ? "bg-accent/15 text-accent"
+            : "text-ink-muted hover:bg-surface-2 hover:text-ink-secondary"
         }`}
       >
         {icon}
@@ -56,7 +56,7 @@ export function IconButton({ pending, onClick, label, icon }: IconButtonProps) {
         aria-label={label}
         disabled={pending}
         onClick={onClick}
-        className="rounded-lg p-2 text-slate-400 outline-none ring-cyan-300 transition hover:bg-slate-800 hover:text-slate-200 focus-visible:ring-2 disabled:opacity-50"
+        className="rounded-lg p-2 text-ink-muted outline-none ring-accent transition hover:bg-surface-2 hover:text-ink-secondary focus-visible:ring-2 disabled:opacity-50"
       >
         {icon}
       </button>
@@ -80,7 +80,7 @@ export function IconLinkButton({ href, label, icon }: IconLinkButtonProps) {
         target="_blank"
         rel="noopener noreferrer"
         aria-label={label}
-        className="block rounded-lg p-2 text-slate-400 outline-none ring-cyan-300 transition hover:bg-slate-800 hover:text-slate-200 focus-visible:ring-2"
+        className="block rounded-lg p-2 text-ink-muted outline-none ring-accent transition hover:bg-surface-2 hover:text-ink-secondary focus-visible:ring-2"
       >
         {icon}
       </a>

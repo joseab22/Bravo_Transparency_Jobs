@@ -7,15 +7,19 @@ interface ConfidenceGaugeProps {
 }
 
 // Status colors, one hue per band -- validated for >=3:1 contrast against
-// the app's dark card surface (bg-slate-900, #0f172a). Never shown without
-// an adjacent text label (the number itself, plus confidenceLabel() text
-// wherever this renders) per the "status color never carries meaning alone"
-// rule -- this component is decorative reinforcement, not the sole signal.
+// the app's card surface in both themes (globals.css's --surface). Resolved
+// through the same CSS custom properties every other themed color in the
+// app uses (see tailwind.config.js), rather than fixed hex, so this
+// component adapts automatically when .dark toggles rather than needing
+// its own light/dark branch. Never shown without an adjacent text label
+// (the number itself, plus confidenceLabel() text wherever this renders)
+// per the "status color never carries meaning alone" rule -- this
+// component is decorative reinforcement, not the sole signal.
 const BAND_COLOR: Record<ConfidenceBand, string> = {
-  high: "#6ee7b7", // emerald-300
-  medium: "#fde047", // yellow-300
-  low: "#fca5a5", // red-300
-  unknown: "#94a3b8", // slate-400
+  high: "rgb(var(--positive))",
+  medium: "rgb(var(--warning))",
+  low: "rgb(var(--negative))",
+  unknown: "rgb(var(--ink-muted))",
 };
 
 const STROKE_RATIO = 0.14; // stroke width as a fraction of size -- stays thin at any size

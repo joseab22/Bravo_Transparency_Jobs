@@ -12,7 +12,7 @@ export function TabLoading() {
 
 export function TabError({ message }: { message: string }) {
   return (
-    <p role="alert" className="rounded-lg border border-red-500/40 bg-red-950/40 p-4 text-red-200">
+    <p role="alert" className="rounded-lg border border-negative/40 bg-negative/10 p-4 text-negative">
       {message}
     </p>
   );
@@ -21,7 +21,7 @@ export function TabError({ message }: { message: string }) {
 export function TabEmpty({ message }: { message: string }) {
   return (
     <div className={`${CARD} flex flex-col items-center gap-3 p-8 text-center`}>
-      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-9 w-9 text-slate-600">
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-9 w-9 text-ink-faint">
         <path
           d="M4 12.5V18a1 1 0 001 1h14a1 1 0 001-1v-5.5M4 12.5L6.5 5h11L20 12.5M4 12.5h5a1 1 0 011 1v.5a2 2 0 002 2h0a2 2 0 002-2v-.5a1 1 0 011-1h5"
           fill="none"
@@ -31,7 +31,7 @@ export function TabEmpty({ message }: { message: string }) {
           strokeLinecap="round"
         />
       </svg>
-      <p className="text-sm text-slate-400">{message}</p>
+      <p className="text-sm text-ink-muted">{message}</p>
     </div>
   );
 }

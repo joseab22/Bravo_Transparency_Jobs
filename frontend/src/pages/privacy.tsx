@@ -26,16 +26,16 @@ export default function PrivacyPolicy() {
       <section className="mx-auto max-w-[90rem] px-6 py-12">
         <div className="max-w-3xl">
           <h1 className={PAGE_TITLE}>Privacy Policy</h1>
-          <p className="mt-2 text-sm text-slate-400">Last updated: {LAST_UPDATED}</p>
+          <p className="mt-2 text-sm text-ink-muted">Last updated: {LAST_UPDATED}</p>
 
-          <div className="mt-8 rounded-xl border border-amber-700/40 bg-amber-950/20 p-4 text-sm leading-6 text-amber-100">
+          <div className="mt-8 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm leading-6 text-warning">
             This policy describes what JobLens itself collects and does with data. It does not, and
             cannot, describe the data practices of the employers and job boards you are redirected to
             when you apply. See &ldquo;When you apply&rdquo; below.
           </div>
 
           <h2 className={`mt-10 ${SECTION_TITLE}`}>Overview</h2>
-          <p className="mt-3 leading-7 text-slate-300">
+          <p className="mt-3 leading-7 text-ink-secondary">
             JobLens does not require an account. There is no sign-up, no email address, no password,
             and no name collected to use the site. Instead, your browser generates a random,
             anonymous identifier (a &ldquo;device ID&rdquo;) the first time you visit, stores it in your
@@ -45,33 +45,33 @@ export default function PrivacyPolicy() {
           </p>
 
           <h2 className={`mt-10 ${SECTION_TITLE}`}>Data we collect</h2>
-          <ul className="mt-3 list-disc space-y-2 pl-5 leading-7 text-slate-300">
+          <ul className="mt-3 list-disc space-y-2 pl-5 leading-7 text-ink-secondary">
             <li>
-              <span className="font-semibold text-slate-100">Device ID:</span> a random identifier
+              <span className="font-semibold text-ink-primary">Device ID:</span> a random identifier
               generated in your browser, not derived from any personal information.
             </li>
             <li>
-              <span className="font-semibold text-slate-100">Actions tied to that device ID:</span>{" "}
+              <span className="font-semibold text-ink-primary">Actions tied to that device ID:</span>{" "}
               jobs you favorite, mark as applied (including any status or notes you type into the
               Applications tab), add a personal note to, hide from search results, or save a search
               filter for. Also, a short list of listings you have recently viewed.
             </li>
             <li>
-              <span className="font-semibold text-slate-100">Standard server logs:</span> like most
+              <span className="font-semibold text-ink-primary">Standard server logs:</span> like most
               web services, JobLens&apos;s infrastructure may log basic request metadata (timestamps, IP
               address, requested URL) for security and reliability purposes.
             </li>
           </ul>
 
           <h2 className={`mt-10 ${SECTION_TITLE}`}>Data we do not collect</h2>
-          <p className="mt-3 leading-7 text-slate-300">
+          <p className="mt-3 leading-7 text-ink-secondary">
             JobLens does not use cookies, does not use third-party analytics or advertising trackers,
             and does not ask for your name, email address, phone number, resume, or any payment
             information. JobLens never asks you to submit a job application through JobLens itself.
           </p>
 
           <h2 className={`mt-10 ${SECTION_TITLE}`}>Job listing data</h2>
-          <p className="mt-3 leading-7 text-slate-300">
+          <p className="mt-3 leading-7 text-ink-secondary">
             The job postings shown on JobLens are collected from third-party job data providers and
             publicly available listings, not submitted by JobLens users. Company logos are loaded from
             a third-party logo service at request time. Active-hiring confidence scores are an
@@ -80,11 +80,11 @@ export default function PrivacyPolicy() {
           </p>
 
           <h2 className={`mt-10 ${SECTION_TITLE}`}>When you apply</h2>
-          <p className="mt-3 leading-7 text-slate-300">
+          <p className="mt-3 leading-7 text-ink-secondary">
             Clicking &ldquo;Apply&rdquo; or a source link on a listing takes you to the employer&apos;s
             website or a third-party job board, outside of JobLens. Any information you submit there
             &mdash; your resume, contact details, application answers, or anything else &mdash; is
-            <span className="font-semibold text-slate-100">
+            <span className="font-semibold text-ink-primary">
               {" "}
               subject entirely to that platform&apos;s own privacy policy and terms
             </span>
@@ -94,9 +94,9 @@ export default function PrivacyPolicy() {
           </p>
 
           <h2 className={`mt-10 ${SECTION_TITLE}`}>Deleting your data</h2>
-          <p className="mt-3 leading-7 text-slate-300">
+          <p className="mt-3 leading-7 text-ink-secondary">
             You can remove any favorite, application, note, or saved search directly from your{" "}
-            <Link href="/profile" className="text-cyan-300 underline decoration-slate-600 underline-offset-2 hover:text-cyan-200">
+            <Link href="/profile" className="text-accent underline decoration-line underline-offset-2 transition hover:opacity-80">
               profile
             </Link>{" "}
             page at any time. Clearing your browser&apos;s local storage (or using a different browser
@@ -105,30 +105,30 @@ export default function PrivacyPolicy() {
           </p>
 
           <h2 className={`mt-10 ${SECTION_TITLE}`}>Data retention</h2>
-          <p className="mt-3 leading-7 text-slate-300">
+          <p className="mt-3 leading-7 text-ink-secondary">
             Job listing history is retained to preserve an accurate posting timeline even after a
             listing closes. Device-scoped data (favorites, applications, notes, dismissals, saved
             searches) is retained until you delete it or your device ID otherwise stops being sent.
           </p>
 
           <h2 className={`mt-10 ${SECTION_TITLE}`}>Children&apos;s privacy</h2>
-          <p className="mt-3 leading-7 text-slate-300">
+          <p className="mt-3 leading-7 text-ink-secondary">
             JobLens is not directed at children and is not knowingly used to collect information from
             children.
           </p>
 
           <h2 className={`mt-10 ${SECTION_TITLE}`}>Changes to this policy</h2>
-          <p className="mt-3 leading-7 text-slate-300">
+          <p className="mt-3 leading-7 text-ink-secondary">
             This policy may be updated as JobLens changes. Material changes will update the &ldquo;Last
             updated&rdquo; date above.
           </p>
 
           <h2 className={`mt-10 ${SECTION_TITLE}`}>Contact</h2>
-          <p className="mt-3 leading-7 text-slate-300">
+          <p className="mt-3 leading-7 text-ink-secondary">
             Questions about this policy can be sent to{" "}
             <a
               href="mailto:deljosebravoalfonso@gmail.com"
-              className="font-semibold text-cyan-300 underline decoration-slate-600 underline-offset-2 hover:text-cyan-200"
+              className="font-semibold text-accent underline decoration-line underline-offset-2 transition hover:opacity-80"
             >
               deljosebravoalfonso@gmail.com
             </a>
