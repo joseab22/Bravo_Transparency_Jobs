@@ -1,9 +1,11 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  // Class-based, not media-query-based: the app defaults to light mode
-  // regardless of OS preference, with an explicit toggle persisted by the
-  // user (see lib/theme.ts) -- `media` would make dark mode follow the OS
-  // setting instead of the toggle.
+  // Class-based, not media-query-based: the app follows the OS/browser
+  // preference by default, but a user's explicit toggle choice (see
+  // lib/theme.ts) must be able to override it -- Tailwind's `media` option
+  // reads prefers-color-scheme directly with no way for JS to override it,
+  // so class-based plus our own matchMedia handling is required to support
+  // both behaviors.
   darkMode: "class",
   content: [
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",

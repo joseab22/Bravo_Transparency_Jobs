@@ -2,14 +2,24 @@ export type Theme = "light" | "dark";
 
 const STORAGE_KEY = "joblens_theme";
 
-// Light is the default whenever nothing is stored yet -- this deliberately
-// does NOT consult prefers-color-scheme. The app's dark mode is an opt-in
-// toggle, not an OS-following default; matching the boot script in
-// _document.tsx, which applies this same rule before first paint.
-export function getStoredTheme(): Theme {
-  if (typeof window === "undefined") return "light";
+function systemPrefersDark(): boolean {
+  if (typeof window === "undefined" || !window.matchMedia) return false;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+// The user's explicit choice from the toggle, if they've ever used it. null
+// means no override exists yet -- the theme should follow the OS/browser
+// preference, not default to a fixed value.
+export function getExplicitTheme(): Theme | null {
+  if (typeof window === "undefined") return null;
   const stored = window.localStorage.getItem(STORAGE_KEY);
-  return stored === "dark" ? "dark" : "light";
+  return stored === "dark" || stored === "light" ? stored : null;
+}
+
+// The theme actually in effect right now: the explicit override if one
+// exists, otherwise whatever the OS/browser currently prefers.
+export function getEffectiveTheme(): Theme {
+  return getExplicitTheme() ?? (systemPrefersDark() ? "dark" : "light");
 }
 
 export function applyTheme(theme: Theme): void {
@@ -17,7 +27,10 @@ export function applyTheme(theme: Theme): void {
   document.documentElement.classList.toggle("dark", theme === "dark");
 }
 
-export function setStoredTheme(theme: Theme): void {
+// Sets an explicit override (what the toggle calls) -- from this point on,
+// the site no longer follows OS changes for this browser until the
+// override is cleared.
+export function setExplicitTheme(theme: Theme): void {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(STORAGE_KEY, theme);
   applyTheme(theme);
@@ -28,9 +41,12 @@ export function setStoredTheme(theme: Theme): void {
 // runs after the initial HTML is already visible, which would show a flash
 // of the wrong theme). Kept here as the single source of truth for the
 // logic; _document.tsx's copy must match this exactly if it's ever changed.
+// Mirrors getEffectiveTheme() above in plain JS, since that function itself
+// can't run this early (React hasn't hydrated yet).
 export const THEME_BOOT_SCRIPT = `
 try {
-  var t = localStorage.getItem("${STORAGE_KEY}");
-  if (t === "dark") document.documentElement.classList.add("dark");
+  var stored = localStorage.getItem("${STORAGE_KEY}");
+  var isDark = stored === "dark" || (stored !== "light" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  if (isDark) document.documentElement.classList.add("dark");
 } catch (e) {}
 `;
