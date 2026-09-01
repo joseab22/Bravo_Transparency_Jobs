@@ -10,17 +10,20 @@
    design; light is the new addition. See tailwind.config.js for how each
    variable maps to a class name. */
 :root {
-  --page: 248 250 252; /* slate-50 */
+  /* Neutral tokens stepped one shade darker than a bare slate-50/100/etc
+     scale would give -- the lightest defaults read as washed out against
+     white cards. Still the same in-theme slate family, dark mode untouched. */
+  --page: 241 245 249; /* slate-100 */
   --surface: 255 255 255; /* white */
-  --surface-2: 241 245 249; /* slate-100 */
-  --inset: 241 245 249; /* slate-100 */
-  --line: 226 232 240; /* slate-200 */
-  --line-subtle: 241 245 249; /* slate-100 */
-  --line-strong: 203 213 225; /* slate-300 */
+  --surface-2: 226 232 240; /* slate-200 */
+  --inset: 226 232 240; /* slate-200 */
+  --line: 203 213 225; /* slate-300 */
+  --line-subtle: 226 232 240; /* slate-200 */
+  --line-strong: 148 163 184; /* slate-400 */
   --ink-primary: 15 23 42; /* slate-900 */
   --ink-secondary: 51 65 85; /* slate-700 */
-  --ink-muted: 100 116 139; /* slate-500 */
-  --ink-faint: 148 163 184; /* slate-400 */
+  --ink-muted: 71 85 105; /* slate-600 */
+  --ink-faint: 100 116 139; /* slate-500 */
   --ink-onaccent: 255 255 255; /* white, text on the solid accent button */
   --accent: 8 145 178; /* cyan-600 -- readable on white, unlike cyan-300 */
   --accent-solid: 8 145 178; /* cyan-600 */
