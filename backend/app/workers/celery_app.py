@@ -16,7 +16,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.time import utc_now
 from app.db.session import AsyncSessionLocal
-from app.models.models import JobPosting
+from app.models.models import EventType, JobEvent, JobPosting
 from app.services.embedding_enrichment import enrich_embeddings
 from app.services.location_enrichment import enrich_locations
 from app.services.normalizer import calculate_days_active
@@ -246,13 +246,43 @@ async def _expire_stale() -> dict:
         return {"status": "disabled", "expired": 0}
     cutoff = utc_now() - timedelta(days=settings.stale_job_days)
     async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            update(JobPosting).where(
+        stale_ids = list((await db.execute(
+            select(JobPosting.id).where(
                 and_(JobPosting.is_active.is_(True), JobPosting.date_last_seen < cutoff)
-            ).values(is_active=False, active_hiring_confidence=None)
+            )
+        )).scalars())
+        if not stale_ids:
+            return {"status": "completed", "expired": 0}
+
+        await db.execute(
+            update(JobPosting).where(JobPosting.id.in_(stale_ids))
+            .values(is_active=False, active_hiring_confidence=None)
         )
+        # Unlike verify_listings.py's and ingestion.py's deactivation paths,
+        # this one has no conclusive evidence the listing itself closed --
+        # only that no source has re-confirmed it within stale_job_days.
+        # Record that distinction explicitly (find_silently_expired_jobs.py
+        # relies on it): a job deactivated with no "expired" JobEvent at all
+        # used to be indistinguishable from one this task quietly caught,
+        # which matters most when a whole collection source stops running
+        # (e.g. an exhausted provider API quota) and every job it alone
+        # discovered goes stale together, even though none of them have
+        # actually closed.
+        db.add_all([
+            JobEvent(
+                job_posting_id=job_id,
+                event_type=EventType.expired.value,
+                payload={"method": "stale_no_recent_confirmation", "stale_job_days": settings.stale_job_days},
+                description=(
+                    f"No source re-confirmed this listing within {settings.stale_job_days} days. "
+                    "This is not conclusive evidence the listing closed -- it may mean a collection "
+                    "source stopped running rather than that the job itself is gone."
+                ),
+            )
+            for job_id in stale_ids
+        ])
         await db.commit()
-        return {"status": "completed", "expired": result.rowcount or 0}
+        return {"status": "completed", "expired": len(stale_ids)}
 
 
 async def _enrich_locations(limit: int | None) -> dict:
