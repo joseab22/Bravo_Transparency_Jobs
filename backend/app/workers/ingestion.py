@@ -405,8 +405,16 @@ async def _update_existing(job: JobPosting, record: dict[str, Any], db: AsyncSes
         "education_required", "experience_years_min", "experience_years_max",
         "description_raw", "date_posted", "applicant_count",
     ):
+        # description_raw and applicant_count used to be special-cased to
+        # always overwrite, including with None. A re-collection pass whose
+        # payload simply doesn't include a description (common -- some
+        # providers only return full text on a per-job call, not the bulk
+        # search call routine re-collection uses) would then silently wipe
+        # a previously-stored description on every subsequent ingest. Every
+        # field now follows the same rule: only overwrite when the incoming
+        # value is actually present, never with absence.
         value = record.get(field)
-        if value is not None or field in {"applicant_count", "description_raw"}:
+        if value is not None:
             setattr(job, field, value)
     job.date_last_seen = now
     job.days_active = calculate_days_active(job.date_posted, job.date_first_seen, now)
