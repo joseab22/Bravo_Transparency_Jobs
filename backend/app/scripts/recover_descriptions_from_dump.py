@@ -94,12 +94,79 @@ def extract_descriptions(dump_path: Path) -> dict[int, str]:
     return descriptions
 
 
+def extract_all_rows(dump_path: Path) -> dict[int, tuple[str, bool]]:
+    """Return {job id: (title_raw, had_description)} for EVERY job_postings
+    row in the dump, including ones with no description -- used only by
+    --verify-sample to show concrete, checkable evidence (title + whether
+    that exact row had a description at dump time) rather than asking
+    anyone to trust an aggregate count.
+    """
+    rows: dict[int, tuple[str, bool]] = {}
+    in_block = False
+    id_index = description_index = title_index = None
+
+    with dump_path.open("r", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            if not in_block:
+                if line.startswith("COPY public.job_postings ("):
+                    id_index, description_index = _find_column_indexes(line)
+                    header = line[line.index("(") + 1 : line.rindex(")")]
+                    title_index = [c.strip() for c in header.split(",")].index("title_raw")
+                    in_block = True
+                continue
+            if line.rstrip("\n") == "\\.":
+                break
+            fields = line.rstrip("\n").split("\t")
+            raw_description = fields[description_index]
+            had_description = raw_description not in ("\\N", "")
+            rows[int(fields[id_index])] = (_unescape_copy_text(fields[title_index]), had_description)
+
+    return rows
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("dump_path", type=Path, help="Path to the pg_dump .sql file (plain-text format).")
     parser.add_argument("--apply", action="store_true", help="Write recovered descriptions to the database.")
     parser.add_argument("--limit", type=int, default=None, help="Maximum number of jobs to restore.")
+    parser.add_argument(
+        "--verify-sample",
+        type=int,
+        default=0,
+        metavar="N",
+        help=(
+            "Print concrete per-job evidence for N currently-missing jobs whose id exists in the "
+            "dump's id range: id, title, and whether that exact row already had no description at "
+            "dump time -- for manually checking specific jobs, instead of trusting an aggregate count."
+        ),
+    )
     return parser.parse_args()
+
+
+async def verify_sample(dump_path: Path, sample_size: int) -> None:
+    all_rows = extract_all_rows(dump_path)
+    max_dump_id = max(all_rows) if all_rows else 0
+
+    async with AsyncSessionLocal() as db:
+        missing = list((await db.execute(
+            select(JobPosting.id, JobPosting.title_raw).where(
+                ((JobPosting.description_raw.is_(None)) | (JobPosting.description_raw == ""))
+                & (JobPosting.id <= max_dump_id)
+            ).limit(sample_size)
+        )).all())
+
+    if not missing:
+        print(f"No currently-missing jobs have an id within the dump's range (max id in dump: {max_dump_id}).")
+        return
+
+    print(f"{'id':>8}  {'in dump?':<10}  {'had description in dump?':<27}  live title / dump title")
+    for job_id, live_title in missing:
+        dump_row = all_rows.get(job_id)
+        if dump_row is None:
+            print(f"{job_id:>8}  {'no':<10}  {'-':<27}  {live_title!r}")
+        else:
+            dump_title, had_description = dump_row
+            print(f"{job_id:>8}  {'yes':<10}  {str(had_description):<27}  live={live_title!r} dump={dump_title!r}")
 
 
 async def run(args: argparse.Namespace) -> dict[str, int]:
@@ -151,6 +218,11 @@ async def run(args: argparse.Namespace) -> dict[str, int]:
 
 def main() -> None:
     args = parse_args()
+    if args.verify_sample:
+        if not args.dump_path.exists():
+            raise SystemExit(f"Dump file not found: {args.dump_path}")
+        asyncio.run(verify_sample(args.dump_path, args.verify_sample))
+        return
     summary = asyncio.run(run(args))
     log.info("recover_descriptions_from_dump_summary", mode="apply" if args.apply else "dry_run", **summary)
     print(summary)
