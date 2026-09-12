@@ -52,6 +52,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--apply", action="store_true", help="Reactivate the affected jobs.")
     parser.add_argument("--limit", type=int, default=None, help="Maximum number of jobs to reactivate.")
     parser.add_argument("--sample", type=int, default=10, help="How many example jobs to print (dry run only).")
+    parser.add_argument(
+        "--batch-size", type=int, default=250,
+        help="Commit every N jobs instead of one giant transaction at the end -- keeps progress if "
+        "anything interrupts a large run, and each batch's own errors are caught and reported "
+        "individually instead of one failure risking the whole run.",
+    )
     return parser.parse_args()
 
 
@@ -78,33 +84,52 @@ async def run(args: argparse.Namespace) -> dict[str, int]:
             for job_id, title, last_seen in sample_rows:
                 print(f"  {job_id:>8}  last_seen={last_seen}  {title!r}")
 
-        reactivated = 0
+        reactivated = already_active = not_found = errored = 0
         if args.apply:
             target_ids = silently_expired_ids[: args.limit] if args.limit else silently_expired_ids
-            for job_id in target_ids:
-                job = await db.get(JobPosting, job_id)
-                if job is None or job.is_active:
-                    continue
-                job.is_active = True
-                db.add(JobEvent(
-                    job_posting_id=job.id,
-                    event_type=EventType.reactivated.value,
-                    description=(
-                        "Reactivated: this job had no conclusive evidence of closure on record "
-                        "(no 'expired' JobEvent), so it was deactivated only because no source had "
-                        "re-confirmed it recently -- not because the listing was verified closed."
-                    ),
-                    payload={"method": "silently_expired_recovery", "reactivated_at": utc_now().isoformat()},
-                ))
-                reactivated += 1
-            if reactivated:
-                await db.commit()
+            for index, job_id in enumerate(target_ids, start=1):
+                try:
+                    job = await db.get(JobPosting, job_id)
+                    if job is None:
+                        not_found += 1
+                    elif job.is_active:
+                        already_active += 1
+                    else:
+                        job.is_active = True
+                        db.add(JobEvent(
+                            job_posting_id=job.id,
+                            event_type=EventType.reactivated.value,
+                            description=(
+                                "Reactivated: this job had no conclusive evidence of closure on record "
+                                "(no 'expired' JobEvent), so it was deactivated only because no source "
+                                "had re-confirmed it recently -- not because the listing was verified closed."
+                            ),
+                            payload={"method": "silently_expired_recovery", "reactivated_at": utc_now().isoformat()},
+                        ))
+                        reactivated += 1
+                except Exception as exc:
+                    errored += 1
+                    log.error("reactivate_job_error", job_id=job_id, error=str(exc))
+                    await db.rollback()
+
+                if index % args.batch_size == 0:
+                    await db.commit()
+                    log.info(
+                        "reactivate_progress", processed=index, total=len(target_ids),
+                        reactivated=reactivated, already_active=already_active,
+                        not_found=not_found, errored=errored,
+                    )
+
+            await db.commit()
 
     return {
         "total_inactive": len(inactive_ids),
         "deactivated_with_explanation": len(explained_ids),
         "silently_expired_no_explanation": len(silently_expired_ids),
         "reactivated": reactivated,
+        "already_active": already_active,
+        "not_found": not_found,
+        "errored": errored,
     }
 
 
