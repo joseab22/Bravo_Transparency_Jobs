@@ -6,6 +6,7 @@ import type {
   FavoriteEntry,
   JobDetail,
   JobFilters,
+  JobListItem,
   MarketStats,
   NoteEntry,
   PaginatedJobs,
@@ -84,6 +85,9 @@ export const jobsApi = {
   },
   async stats(): Promise<MarketStats> {
     return request<MarketStats>("/jobs/stats");
+  },
+  async related(jobId: number): Promise<JobListItem[]> {
+    return request<JobListItem[]>(`/jobs/${jobId}/related`);
   },
 };
 

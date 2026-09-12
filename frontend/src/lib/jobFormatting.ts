@@ -83,6 +83,17 @@ export function postingDateLabel(job: JobListItem): string | null {
   return parsed.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" });
 }
 
+// Exact text of the "parallel" classification's signal (must match
+// scoring.py's identical literal and this file's own copy below).
+// ScoreReasoningTooltip matches against this to render that one signal as
+// a clickable "show these jobs" control instead of plain bullet text --
+// job.listing_classification === "parallel" is the authoritative check;
+// this string match only decides *where* in the rendered signals list that
+// control appears. If the wording ever drifts out of sync, the failure
+// mode is graceful (that bullet just renders as plain text again), not a
+// broken or misleading UI.
+export const RELATED_OPENINGS_SIGNAL = "Related openings appear to be active at the same time.";
+
 export function confidenceLabel(value?: number | null): string {
   if (value == null) return "Not scored";
   if (value >= 70) return "Higher confidence";
@@ -345,7 +356,7 @@ export function fallbackScoreReasoning(job: JobListItem): ActiveHiringReasoning 
       `JobLens detected ${job.repost_count} prior occurrence${job.repost_count === 1 ? "" : "s"} of this role.`,
     );
   } else if (classification === "parallel") {
-    signals.push("Related openings appear to be active at the same time.");
+    signals.push(RELATED_OPENINGS_SIGNAL);
   } else {
     signals.push("No repost history is currently recorded.");
   }

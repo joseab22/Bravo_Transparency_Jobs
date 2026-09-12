@@ -1,8 +1,84 @@
 import { useState } from "react";
+import Link from "next/link";
 
 import { ConfidenceGauge } from "@/components/ConfidenceGauge";
-import { confidenceLabel, fallbackScoreReasoning, signedPoints } from "@/lib/jobFormatting";
+import { jobsApi } from "@/lib/api";
+import { confidenceLabel, fallbackScoreReasoning, RELATED_OPENINGS_SIGNAL, signedPoints } from "@/lib/jobFormatting";
 import type { JobListItem } from "@/types/jobs";
+
+// Renders the "Related openings" signal as an expandable control instead of
+// plain bullet text: clicking it lazy-loads the other active listings in
+// this job's canonical group (its parallel siblings -- see the backend's
+// /jobs/{id}/related, which groups on the same coalesce(canonical_job_id,
+// id) the "Found on"/collapse features already use) and links straight to
+// each one's own page.
+function RelatedOpeningsSignal({ jobId }: { jobId: number }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [jobs, setJobs] = useState<JobListItem[] | null>(null);
+
+  function toggle() {
+    const next = !open;
+    setOpen(next);
+    if (next && jobs === null && !loading) {
+      setLoading(true);
+      setError(null);
+      jobsApi
+        .related(jobId)
+        .then(setJobs)
+        .catch((requestError) => {
+          setError(requestError instanceof Error ? requestError.message : "Could not load related openings.");
+        })
+        .finally(() => setLoading(false));
+    }
+  }
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        className="flex w-full items-start gap-1 rounded text-left outline-none ring-accent focus-visible:ring-2"
+      >
+        <span>•</span>
+        <span className="text-accent underline decoration-line underline-offset-2 hover:opacity-80">
+          {RELATED_OPENINGS_SIGNAL}
+        </span>
+        <span aria-hidden="true" className="text-ink-faint">
+          {open ? "▲" : "▼"}
+        </span>
+      </button>
+
+      {open && (
+        <div className="ml-3 mt-1.5 space-y-1.5 border-l border-line-subtle pl-3">
+          {loading && <p className="text-ink-faint">Loading related openings…</p>}
+          {error && (
+            <p role="alert" className="text-negative">
+              {error}
+            </p>
+          )}
+          {!loading && !error && jobs?.length === 0 && (
+            <p className="text-ink-faint">No other active openings in this group right now.</p>
+          )}
+          {!loading &&
+            !error &&
+            jobs?.map((related) => (
+              <Link
+                key={related.id}
+                href={`/jobs/${related.id}`}
+                className="block rounded text-ink-secondary outline-none ring-accent hover:text-accent focus-visible:ring-2"
+              >
+                <span className="font-medium">{related.title_raw}</span>
+                {related.location_raw ? ` · ${related.location_raw}` : ""}
+              </Link>
+            ))}
+        </div>
+      )}
+    </li>
+  );
+}
 
 export function ScoreReasoningTooltip({ job }: { job: JobListItem }) {
   const [open, setOpen] = useState(false);
@@ -95,9 +171,13 @@ export function ScoreReasoningTooltip({ job }: { job: JobListItem }) {
               What JobLens observed
             </p>
             <ul className="mt-2 space-y-1 text-xs leading-5 text-ink-secondary">
-              {reasoning.signals.slice(0, 6).map((signal) => (
-                <li key={signal}>• {signal}</li>
-              ))}
+              {reasoning.signals.slice(0, 6).map((signal) =>
+                signal === RELATED_OPENINGS_SIGNAL ? (
+                  <RelatedOpeningsSignal key={signal} jobId={job.id} />
+                ) : (
+                  <li key={signal}>• {signal}</li>
+                ),
+              )}
             </ul>
           </div>
         )}

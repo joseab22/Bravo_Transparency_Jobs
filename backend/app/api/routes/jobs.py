@@ -379,6 +379,54 @@ async def get_job(
     ))[0]
 
 
+@router.get("/{job_id}/related", response_model=list[JobPostingListItem])
+async def related_jobs(
+    job_id: Annotated[int, Path(ge=1)],
+    db: AsyncSession = Depends(get_db),
+    device_id: Annotated[str | None, Depends(get_optional_device_id)] = None,
+):
+    """Other active listings in job_id's canonical group -- the same-employer,
+    same-time openings behind the "Related openings" score signal
+    (classification == "parallel"; see ScoringService.active_hiring_reasoning).
+    Canonical grouping already treats these as one real-world-adjacent group
+    (job.canonical_job_id is set for parallel siblings the same way it is for
+    reposts), so membership is exactly coalesce(canonical_job_id, id).
+    """
+    job = (await db.execute(
+        select(JobPosting.id, JobPosting.canonical_job_id).where(JobPosting.id == job_id)
+    )).first()
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    group_id = job.canonical_job_id or job.id
+    group_expr = func.coalesce(JobPosting.canonical_job_id, JobPosting.id)
+    conditions = [
+        group_expr == group_id,
+        JobPosting.id != job_id,
+        JobPosting.is_active.is_(True),
+    ]
+    if device_id:
+        conditions.append(
+            JobPosting.id.not_in(
+                select(JobDismissal.job_posting_id).where(JobDismissal.device_id == device_id)
+            )
+        )
+
+    siblings = list((await db.execute(
+        select(JobPosting)
+        .options(*LIST_OPTIONS)
+        .where(*conditions)
+        .order_by(JobPosting.active_hiring_confidence.desc().nullslast(), JobPosting.date_last_seen.desc())
+        .limit(25)
+    )).scalars().unique())
+
+    # False by construction (own group, excludes job_id), so each sibling's
+    # "Found on" should list only its own sources, not the whole group's --
+    # collapse=True would instead re-merge every sibling back into a single
+    # representative, which is exactly what this endpoint exists to avoid.
+    return await _serialize_jobs(siblings, db, JobPostingListItem, collapse=False, device_id=device_id)
+
+
 @router.post(
     "/{job_id}/score",
     dependencies=[Depends(require_admin_key)],
