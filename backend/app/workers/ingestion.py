@@ -280,7 +280,18 @@ def _location_changed(job: JobPosting, record: dict[str, Any]) -> bool:
     )
 
 
-async def _write_snapshot(job: JobPosting, record: dict[str, Any], db: AsyncSession, *, force: bool = False) -> bool:
+async def _write_snapshot(job: JobPosting, db: AsyncSession, *, force: bool = False) -> bool:
+    """Snapshot job's CURRENT field values -- must be called before
+    _update_existing's field-mutation loop applies the incoming record, so a
+    forced snapshot (force=True, meaning a meaningful field is about to
+    change) captures the state immediately before that change, not after.
+
+    Previously this snapshotted the incoming `record` after mutation had
+    already been applied to `job`, so the very re-ingestion pass that wiped
+    a field (e.g. description_raw, via the ingestion bug fixed alongside
+    this one) produced a "historical" snapshot recording that same wiped
+    value -- there was never a real "before" state on file to recover from.
+    """
     latest = max(job.snapshots, key=lambda x: x.snapshot_at) if job.snapshots else None
     due = latest is None or utc_now() - latest.snapshot_at >= timedelta(hours=settings.snapshot_min_interval_hours)
     if not force and not due:
@@ -288,14 +299,14 @@ async def _write_snapshot(job: JobPosting, record: dict[str, Any], db: AsyncSess
     db.add(JobSnapshot(
         job_posting_id=job.id,
         snapshot_at=utc_now(),
-        source=record["source"],
-        applicant_count=record.get("applicant_count"),
-        description_raw=record.get("description_raw") or None,
-        description_hash=_desc_hash(record.get("description_raw") or ""),
-        salary_min=record.get("salary_min"),
-        salary_max=record.get("salary_max"),
-        title_raw=record["title_raw"],
-        is_active=True,
+        source=job.source,
+        applicant_count=job.applicant_count,
+        description_raw=job.description_raw or None,
+        description_hash=_desc_hash(job.description_raw or ""),
+        salary_min=job.salary_min,
+        salary_max=job.salary_max,
+        title_raw=job.title_raw,
+        is_active=job.is_active,
     ))
     return True
 
@@ -391,6 +402,10 @@ async def _update_existing(job: JobPosting, record: dict[str, Any], db: AsyncSes
     changed = _mutable_changed(job, record)
     location_changed = _location_changed(job, record)
 
+    # Must run before any of job's fields below are mutated -- see
+    # _write_snapshot's docstring for why the ordering matters.
+    await _write_snapshot(job, db, force=changed)
+
     if record["source"] == job.source:
         job.source_url = record.get("source_url") or job.source_url
         job.publisher_name = record.get("publisher_name") or job.publisher_name
@@ -422,7 +437,6 @@ async def _update_existing(job: JobPosting, record: dict[str, Any], db: AsyncSes
 
     if changed:
         _invalidate_scores(job)
-    await _write_snapshot(job, record, db, force=changed)
     await _upsert_sightings(job, record, db)
     await _sync_skills(job, record, db)
 
