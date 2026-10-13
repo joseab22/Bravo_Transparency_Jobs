@@ -341,7 +341,9 @@ export function JobDetailContent({ job, loadingMore, error, onFavoriteChange, on
 
         {!loadingMore && detail && !detail.description_raw && (
           <p className="mt-2 text-sm text-ink-faint">
-            No description was available from the source listing.
+            {detail.source === "simplify"
+              ? "Sorry, a description is not available for Simplify jobs."
+              : "No description was available from the source listing."}
           </p>
         )}
 
