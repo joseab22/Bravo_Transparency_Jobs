@@ -319,7 +319,7 @@ function JobDetailContent({ job, loadingMore, error, onFavoriteChange, onApplied
         {!loadingMore && detail && !detail.description_raw && (
           <p className="mt-2 text-sm text-ink-faint">
             {detail.source === "simplify"
-              ? "Description is not available for Simplify jobs."
+              ? "Sorry, a description is not available for Simplify jobs."
               : "No description was available from the source listing."}
           </p>
         )}
