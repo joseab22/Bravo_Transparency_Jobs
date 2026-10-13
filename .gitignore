@@ -439,3 +439,8 @@ CLAUDE.local.md
 # kept local only, never committed or pushed.
 CLAUDE.md
 docs/audit/
+.neon
+
+# Pinned deliberately so Render builds the backend against the same Python
+# version as the local Dockerfile, not a personal pyenv preference.
+!backend/.python-version
