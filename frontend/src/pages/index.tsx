@@ -35,7 +35,7 @@ const DATE_POSTED_OPTIONS: DatePostedOption[] = [
   { value: "21", label: "Last 21 days", maxAgeDays: 21 },
   { value: "any", label: "30+ days (no limit)", maxAgeDays: undefined },
 ];
-const DEFAULT_DATE_POSTED = "21";
+const DEFAULT_DATE_POSTED = "any";
 
 function resolveDatePosted(value: string): DatePostedOption {
   return DATE_POSTED_OPTIONS.find((option) => option.value === value) ?? DATE_POSTED_OPTIONS[3];
