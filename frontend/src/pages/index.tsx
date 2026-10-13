@@ -483,14 +483,20 @@ export default function Home() {
         )}
 
         {loading && jobs.length === 0 && (
-          <div className="mt-10 grid gap-4" aria-label="Loading jobs">
-            {Array.from({ length: 5 }).map((_, index) => (
-              <div
-                key={index}
-                className={`h-36 animate-pulse ${CARD}`}
-              />
-            ))}
-          </div>
+          <>
+            <p className="mt-10 text-center text-sm text-ink-muted">
+              Loading jobs… This can take up to a minute on the first visit in a while, while the
+              server wakes up. If it does not finish, try refreshing the page.
+            </p>
+            <div className="mt-4 grid gap-4" aria-label="Loading jobs">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <div
+                  key={index}
+                  className={`h-36 animate-pulse ${CARD}`}
+                />
+              ))}
+            </div>
+          </>
         )}
 
         {!loading && !error && totalResults === 0 && (
