@@ -139,7 +139,7 @@ export default function Home() {
   function renderToggles() {
     return (
       <>
-        <label className="flex items-center gap-2 text-sm text-ink-secondary">
+        <label className="flex items-start gap-2 text-sm text-ink-secondary" title="When on, postings that appear to be the same job are grouped and shown once instead of listed separately.">
           <input
             type="checkbox"
             checked={collapseCanonical}
@@ -148,9 +148,14 @@ export default function Home() {
               setCollapseCanonical(nextValue);
               void load(1, false, { collapseCanonical: nextValue });
             }}
-            className="h-4 w-4"
+            className="mt-0.5 h-4 w-4"
           />
-          Collapse related listings
+          <span>
+            Group duplicate postings for the same job
+            <span className="block text-xs text-ink-faint">
+              Shows one listing per job instead of every matching posting.
+            </span>
+          </span>
         </label>
 
         <label className="flex items-center gap-2 text-sm text-ink-secondary">
