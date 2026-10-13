@@ -67,7 +67,9 @@ async function request<T>(
     return (await response.json()) as T;
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error("The request timed out.");
+      throw new Error(
+        "The request timed out. If this is the first visit in a while, the server may still be waking up — please wait a few seconds and try again.",
+      );
     }
     throw error;
   } finally {
