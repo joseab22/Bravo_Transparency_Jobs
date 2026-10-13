@@ -1714,15 +1714,15 @@ async def test_clearance_required_filter_matches_tagged_specialization(tmp_path)
         cleared_ids = {"req-cleared-end", "req-cleared-middle", "req-cleared-only"}
         other_ids = {"req-plain", "req-none"}
 
-        conditions = _filters(clearance_required=True)
+        conditions = _filters(clearance_required=True, show_missing_description=True)
         rows = (await db.execute(select(JobPosting.external_id).where(*conditions))).scalars().all()
         assert set(rows) == cleared_ids
 
-        conditions = _filters(clearance_required=False)
+        conditions = _filters(clearance_required=False, show_missing_description=True)
         rows = (await db.execute(select(JobPosting.external_id).where(*conditions))).scalars().all()
         assert set(rows) == other_ids
 
-        conditions = _filters()
+        conditions = _filters(show_missing_description=True)
         rows = (await db.execute(select(JobPosting.external_id).where(*conditions))).scalars().all()
         assert set(rows) == cleared_ids | other_ids
 

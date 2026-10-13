@@ -59,6 +59,7 @@ export default function Home() {
 
   const [filters, setFilters] = useState<FilterValues>(DEFAULT_FILTER_VALUES);
   const [collapseCanonical, setCollapseCanonical] = useState(true);
+  const [showMissingDescription, setShowMissingDescription] = useState(false);
   const [datePostedWithin, setDatePostedWithin] = useState(DEFAULT_DATE_POSTED);
   const [filtersPanelOpen, setFiltersPanelOpen] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
@@ -86,6 +87,13 @@ export default function Home() {
 
   function clearFilters() {
     setFilters(DEFAULT_FILTER_VALUES);
+    setDatePostedWithin(DEFAULT_DATE_POSTED);
+    setShowMissingDescription(false);
+    void load(1, false, {
+      filters: DEFAULT_FILTER_VALUES,
+      datePostedWithin: DEFAULT_DATE_POSTED,
+      showMissingDescription: false,
+    });
   }
 
   function renderToggles() {
@@ -103,6 +111,20 @@ export default function Home() {
             className="h-4 w-4"
           />
           Collapse related listings
+        </label>
+
+        <label className="flex items-center gap-2 text-sm text-ink-secondary">
+          <input
+            type="checkbox"
+            checked={showMissingDescription}
+            onChange={(event) => {
+              const nextValue = event.target.checked;
+              setShowMissingDescription(nextValue);
+              void load(1, false, { showMissingDescription: nextValue });
+            }}
+            className="h-4 w-4"
+          />
+          Show jobs without a description
         </label>
 
         <label className="flex items-center gap-2 text-sm text-ink-secondary">
@@ -133,6 +155,7 @@ export default function Home() {
     scrollAfterLoad = false,
     overrides?: {
       collapseCanonical?: boolean;
+      showMissingDescription?: boolean;
       datePostedWithin?: string;
       filters?: FilterValues;
     },
@@ -163,6 +186,7 @@ export default function Home() {
         salary_max: activeFilters.salaryMax ? Number(activeFilters.salaryMax) : undefined,
         active_hiring_min: activeFilters.activeHiringMin ? Number(activeFilters.activeHiringMin) : undefined,
         collapse_canonical: overrides?.collapseCanonical ?? collapseCanonical,
+        show_missing_description: overrides?.showMissingDescription ?? showMissingDescription,
         sort_by: activeFilters.sortBy,
         sort_dir: activeFilters.sortDir,
       });
@@ -334,7 +358,20 @@ export default function Home() {
           />
         </FilterPanel>
 
-        {error && (
+        {error && error.includes("waking up") && (
+          <div
+            role="status"
+            className="mt-4 flex items-start gap-3 rounded-lg border-2 border-warning bg-warning/15 p-4 text-ink-primary"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="mt-0.5 h-6 w-6 shrink-0 text-warning">
+              <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.6" />
+              <path d="M12 7.5v5l3.5 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <p className="font-semibold">{error}</p>
+          </div>
+        )}
+
+        {error && !error.includes("waking up") && (
           <p className="mt-4 rounded-lg border border-negative/40 bg-negative/10 p-4 text-negative">
             {error}
           </p>
