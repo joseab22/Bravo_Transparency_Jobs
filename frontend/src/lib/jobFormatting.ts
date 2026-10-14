@@ -536,9 +536,16 @@ export function buildTimeline(job: JobDetail): TimelineEntry[] {
       key: `repost-${repost.occurrence_number}-${repost.date_seen}`,
       date: repost.date_seen,
       label: `Reposted (occurrence #${repost.occurrence_number})`,
+      // This listing's own date_first_seen doubles as its "date seen" for
+      // repost purposes, so this entry can land on the same calendar date as
+      // a "First tracked by JobLens" entry just above it. The gap below is
+      // measured against a *different, earlier* listing for the same job,
+      // not against anything else on this timeline -- word it that way, or
+      // it reads as a contradiction ("just discovered" next to "day-old
+      // history") instead of two true facts about the same listing.
       detail:
         repost.days_since_previous != null
-          ? `${repost.days_since_previous} day${repost.days_since_previous === 1 ? "" : "s"} after the previous sighting`
+          ? `A separate listing for this same job was last confirmed active ${repost.days_since_previous} day${repost.days_since_previous === 1 ? "" : "s"} before this one appeared`
           : undefined,
     });
   }
