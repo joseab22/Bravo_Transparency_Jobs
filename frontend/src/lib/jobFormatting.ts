@@ -1,4 +1,4 @@
-import type { ActiveHiringReasoning, JobDetail, JobEvent, JobListItem } from "@/types/jobs";
+import type { ActiveHiringReasoning, JobDetail, JobEvent, JobListItem, RepostEvent } from "@/types/jobs";
 
 const MILLISECONDS_PER_DAY = 86_400_000;
 
@@ -516,6 +516,29 @@ function describeEvent(event: JobEvent): { label: string; detail?: string } {
   }
 }
 
+// days_since_previous is a gap computed against a *different, earlier*
+// listing for the same job (see repost_detector.py), not against anything
+// else on this timeline -- this listing's own date_seen minus that gap is
+// the earlier listing's last-confirmed-active date. Showing that date (not
+// just "N days before") is what makes the entry legible on its own instead
+// of requiring the reader to do the subtraction themselves.
+function repostDetail(repost: RepostEvent): string | undefined {
+  if (repost.days_since_previous == null) return undefined;
+
+  const seen = parseApiDate(repost.date_seen);
+  const days = repost.days_since_previous;
+  const dayLabel = `${days} day${days === 1 ? "" : "s"}`;
+
+  if (!seen) return `A separate listing for this same job was last confirmed active ${dayLabel} before this one appeared`;
+
+  const previousDate = new Date(seen.getTime() - days * MILLISECONDS_PER_DAY);
+  const previousDateLabel = previousDate.toLocaleDateString("en-US", {
+    year: "numeric", month: "short", day: "numeric", timeZone: "UTC",
+  });
+
+  return `A separate listing for this same job was last confirmed active on ${previousDateLabel} (${dayLabel} before this one appeared)`;
+}
+
 // Merges JobEvent rows (title/salary/location changes, activation state) and
 // RepostEvent rows (a separate table specifically tracking repost
 // occurrences) into one chronological history, newest first. Both sources
@@ -543,10 +566,7 @@ export function buildTimeline(job: JobDetail): TimelineEntry[] {
       // not against anything else on this timeline -- word it that way, or
       // it reads as a contradiction ("just discovered" next to "day-old
       // history") instead of two true facts about the same listing.
-      detail:
-        repost.days_since_previous != null
-          ? `A separate listing for this same job was last confirmed active ${repost.days_since_previous} day${repost.days_since_previous === 1 ? "" : "s"} before this one appeared`
-          : undefined,
+      detail: repostDetail(repost),
     });
   }
 
