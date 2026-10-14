@@ -570,5 +570,32 @@ export function buildTimeline(job: JobDetail): TimelineEntry[] {
     });
   }
 
-  return entries.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  // A repost's date_seen is defined as this listing's own date_first_seen
+  // (repost_detector.py), so its first occurrence always lands on the same
+  // calendar day as the "created" JobEvent below, even if the stored
+  // timestamps differ by a few seconds. Two bullets both dated the same day
+  // read as a duplicate/contradiction rather than two facts about one
+  // listing, so merge same-day entries into one. Matching on the UTC day
+  // number (not the raw timestamp string) catches that near-miss case.
+  const mergedByDay = new Map<number, TimelineEntry>();
+  const order: number[] = [];
+  for (const entry of entries) {
+    const day = utcDayNumber(entry.date) ?? order.length;
+    const existing = mergedByDay.get(day);
+    if (!existing) {
+      mergedByDay.set(day, entry);
+      order.push(day);
+      continue;
+    }
+    mergedByDay.set(day, {
+      key: `${existing.key}+${entry.key}`,
+      date: existing.date,
+      label: `${existing.label} · ${entry.label}`,
+      detail: [existing.detail, entry.detail].filter(Boolean).join(" "),
+    });
+  }
+
+  return order
+    .map((day) => mergedByDay.get(day)!)
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 }
