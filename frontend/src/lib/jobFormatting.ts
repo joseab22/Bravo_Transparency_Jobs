@@ -527,16 +527,15 @@ function repostDetail(repost: RepostEvent): string | undefined {
 
   const seen = parseApiDate(repost.date_seen);
   const days = repost.days_since_previous;
-  const dayLabel = `${days} day${days === 1 ? "" : "s"}`;
 
-  if (!seen) return `A separate listing for this same job was last confirmed active ${dayLabel} before this one appeared`;
+  if (!seen) return `Separate listing last active ${days} day${days === 1 ? "" : "s"} earlier`;
 
   const previousDate = new Date(seen.getTime() - days * MILLISECONDS_PER_DAY);
   const previousDateLabel = previousDate.toLocaleDateString("en-US", {
     year: "numeric", month: "short", day: "numeric", timeZone: "UTC",
   });
 
-  return `A separate listing for this same job was last confirmed active on ${previousDateLabel} (${dayLabel} before this one appeared)`;
+  return `Separate listing last active ${previousDateLabel}`;
 }
 
 // Merges JobEvent rows (title/salary/location changes, activation state) and
