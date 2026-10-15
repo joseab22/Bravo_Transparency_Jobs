@@ -441,6 +441,12 @@ CLAUDE.md
 docs/audit/
 .neon
 
+# Neon CLI skill install (npx neon skills) -- local tooling, and
+# .claude/settings.local.json in particular has picked up permission entries
+# from unrelated local projects, so keep this whole tree out of the repo.
+/.claude/
+/skills-lock.json
+
 # Pinned deliberately so Render builds the backend against the same Python
 # version as the local Dockerfile, not a personal pyenv preference.
 !backend/.python-version
